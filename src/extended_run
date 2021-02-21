@@ -1,0 +1,94 @@
+#!/bin/bash
+
+export BASEDIR=$(dirname -- "$(dirname -- "$(readlink -f -- "$BASH_SOURCE")")")
+#cd $BASEDIR
+
+export TAG="extended"
+export CONFIG="$BASEDIR/conf/${TAG}.env"
+export OUTDIR="$BASEDIR/output/${TAG}"
+
+_stop() {
+    docker rm -f dc-server dc-client dc-warmup stress &> /dev/null
+    for child in $(jobs -p); do
+        kill $child
+        wait $child
+    done
+    echo "All children terminated"
+
+    echo "--------------------------------"
+    echo "Benchmark at $RPS rps complete"
+    echo "--------------------------------"
+
+    exit
+}
+trap _stop SIGINT
+
+while read var; do 
+    [ ! -z $var ] && eval "export $var"
+done < "$CONFIG"
+
+export CONNECTIONS=$(($CPW * $CLIENT_WORKERS))
+
+# BENCHMARK (indefinitely)
+docker rm -f dc-server dc-client dc-warmup stress &> /dev/null
+
+# Start server
+#--cgroup-parent /docker/server/ \
+export SERVER_ID=$(docker run -d \
+    --net dc \
+    --name dc-server \
+    --cpuset-cpus=0,2,4,6,8,10,12,14,16,18,20,22,24,26,28,30,32,34 \
+    --cpuset-mems=0 \
+    cloudsuite/data-caching:server \
+        -t $SERVER_WORKERS -m $SERVER_MEMORY -n $SERVER_MIN)
+echo "Running dc-server: $SERVER_ID"
+
+# Warm up server
+echo -n "Running dc-warmup: "
+#--cgroup-parent /docker/client/ \
+docker run -d --rm \
+    --net dc \
+    --name dc-warmup \
+    --cpuset-cpus=1,3,5,7,9,11,13,15,17,19,21,23,25,27,29,31,33,35 \
+    --cpuset-mems=1 \
+    -v $BASEDIR/src:/volume \
+    --entrypoint /volume/warmup.sh \
+    --env-file "$CONFIG" \
+    -e CONNECTIONS \
+    jonassa/data-caching:client
+
+echo "Warming up the server ..."
+docker container wait dc-warmup
+
+# Benchmark server
+echo "Running dc-client: at $(date +%T)"
+#--cgroup-parent /docker/client/ \
+docker run -d \
+    --net dc \
+    --name dc-client \
+    --cpuset-cpus=1,3,5,7,9,11,13,15,17,19,21,23,25,27,29,31,33,35 \
+    --cpuset-mems=1 \
+    -v $BASEDIR/src:/volume \
+    --entrypoint /volume/extended.sh \
+    --env-file "$CONFIG" \
+    -e CONNECTIONS \
+    jonassa/data-caching:client $RPS
+
+# Run stress-ng
+# if [ $USE_STRESS = 1 ]; then
+#     echo -n "Running stress-ng: "
+#####--cgroup-parent /docker/server/ \
+#     docker run -d --rm \
+#         --name stress \
+#         --cpuset-cpus=0,2,4,6,8,10,12,14,16,18,20,22,24,26,28,30,32,34 \
+#         --cpuset-mems=0 \
+#         polinux/stress-ng \
+#             --cpu 18 \
+#             --cpu-load 50 \
+#             --metrics-brief \
+#             --timeout 0
+# fi
+
+echo "Benchmarking the server ..."
+docker container wait dc-client
+

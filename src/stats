@@ -1,0 +1,27 @@
+#!/bin/bash
+
+STATSFILE=$1
+STATS_INTERVAL=$2
+SLEEP_TIME=$(($STATS_INTERVAL - 2))
+
+:>| "$STATSFILE.tmp"
+:>| "$STATSFILE.rapl"
+#:>| "$STATSFILE.time"
+
+request_stats() {
+    #date -u --rfc-3339=ns >> "$STATSFILE.time"
+    curl -sS --unix-socket /var/run/docker.sock "http:/v1.26/containers/$SERVER_ID/stats?stream=0" >> "$STATSFILE.tmp"
+    cat /sys/class/powercap/intel-rapl:0/energy_uj >> "$STATSFILE.rapl"
+}
+
+cleanup() {
+    jq  -s . < "$STATSFILE.tmp" > "$STATSFILE.json" && rm -f "$STATSFILE.tmp"
+}
+trap cleanup EXIT
+
+while true; do
+    #echo "0" > "/sys/class/powercap/intel-rapl:0/energy_uj"
+    sleep $SLEEP_TIME
+    request_stats
+done
+

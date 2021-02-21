@@ -1,0 +1,7 @@
+#!/bin/bash
+
+STATSFILE=$1
+
+echo '' > $STATSFILE
+curl -sS --unix-socket /var/run/docker.sock "http:/v1.26/containers/$SERVER_ID/stats?stream=1" | jq -s . | sponge $STATSFILE
+

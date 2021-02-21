@@ -1,0 +1,164 @@
+#!/bin/bash
+
+_cleanup() {
+    docker rm -f stress dc-warmup &> /dev/null
+
+    kill $STATS_ID &> /dev/null
+
+    docker logs -t dc-client | grep -v -e "starting receive" -e "Creating worker" -e "num_worker" > "$LOGFILE.txt"
+
+    echo "timestamp, timeDiff, rps, requests, gets, sets, hits, misses, avg_lat, 90th, 95th, 99th, std, min, max, avgGetSize" > "${LOGFILE}_lat.csv" 
+    sed -n '/timeDiff/{n;p}' "$LOGFILE.txt" | awk '$1 = $1","' | sed 1d >> "${LOGFILE}_lat.csv"
+
+    echo -n "timestamp " > "${LOGFILE}_osr.csv"
+    for i in $(seq $CLIENT_WORKERS); do
+        if [[ $i = $CLIENT_WORKERS ]]; then
+            echo "osr$i" >> "${LOGFILE}_osr.csv"
+        else
+            echo -n "osr$i " >> "${LOGFILE}_osr.csv"
+        fi
+    done
+    sed -n '/Outstanding/{n;p}' "$LOGFILE.txt" | sed 1d >> "${LOGFILE}_osr.csv"
+    tr ' ' ',' < "${LOGFILE}_osr.csv" | sed 's/,$//' | sponge "${LOGFILE}_osr.csv"
+    
+
+    docker rm -f dc-client &> /dev/null
+
+    echo "Waiting for stats cleanup ..."
+    wait $STATS_ID
+
+    docker rm -f dc-server &> /dev/null
+
+    echo "Cleanup performed"
+    #[[ -n $(jobs -p) ]] && kill -9 $(jobs -p)
+}
+trap _cleanup EXIT
+
+if [ $# = 2 ]; then
+    TAG=${1}
+    RPS=${2}
+else
+    echo "Run tag and RPS are required arguments" >&2
+    exit
+fi
+
+LOGDIR="$OUTDIR/logs"
+STATSDIR="$OUTDIR/stats"
+LOGFILE="$LOGDIR/$RPS"
+STATSFILE="$STATSDIR/$RPS"
+
+mkdir -p $OUTDIR $LOGDIR $STATSDIR
+cp "$CONFIG" "$OUTDIR/conf.env"
+
+export CONNECTIONS=$(($CPW * $CLIENT_WORKERS))
+
+if [[ -f "$OUTDIR/params.txt" ]]; then
+    echo "$RPS" >> $OUTDIR/params.txt
+else
+    printf "$(date)\nTag: $TAG\nRuntime: $RUNTIME\nStats interval: $STATS_INTERVAL\nTotal connections: $CONNECTIONS\n" > "$OUTDIR/params.txt"
+    printf "Client workers: $CLIENT_WORKERS\nStreaming stats: $STREAM_STATS\nUsing stress: $USE_STRESS\n" >> "$OUTDIR/params.txt"
+    printf "Server workers: $SERVER_WORKERS\nServer memory: $SERVER_MEMORY\nServer minimum allocation: $SERVER_MIN\n" >> "$OUTDIR/params.txt"
+    printf "RPS:\n$RPS\n" >> "$OUTDIR/params.txt"
+fi
+
+printf "\n============================================================================================\n"
+printf "Benchmarking memcached with $RPS attempted RPS, for $(expr $RUNTIME / 60) minutes, reporting every $STATS_INTERVAL seconds"
+printf "\n============================================================================================\n\n"
+
+
+docker rm -f dc-server dc-client dc-warmup stress &> /dev/null
+
+# Start server
+#--cgroup-parent /docker/server/ \
+export SERVER_ID=$(docker run -d \
+    --net dc \
+    --name dc-server \
+    --cpuset-cpus=0,2,4,6,8,10,12,14,16,18,20,22,24,26,28,30,32,34 \
+    --cpuset-mems=0 \
+    cloudsuite/data-caching:server \
+        -t $SERVER_WORKERS -m $SERVER_MEMORY -n $SERVER_MIN)
+echo "Running dc-server: $SERVER_ID"
+
+# Warm up server
+echo -n "Running dc-warmup: "
+# --cgroup-parent /docker/client/ \
+docker run -d --rm \
+    --net dc \
+    --name dc-warmup \
+    --cpuset-cpus=1,3,5,7,9,11,13,15,17,19,21,23,25,27,29,31,33,35 \
+    --cpuset-mems=1 \
+    -v $BASEDIR/src:/volume \
+    --entrypoint /volume/warmup.sh \
+    --env-file "$CONFIG" -e CONNECTIONS \
+    jonassa/data-caching:client
+
+echo "Warming up the server ..."
+docker container wait dc-warmup
+
+# Collect stats
+# if [ $STREAM_STATS = 1 ]; then
+#     $BASEDIR/src/stats_stream "$STATSFILE" &
+# else
+#     $BASEDIR/src/stats "$STATSFILE" $STATS_INTERVAL &
+# fi
+
+
+# Run benchmark
+if [ $DYNAMIC_LOAD = 1 ]; then
+
+    STATS_INTERVAL=$(($STATS_INTERVAL / 5))
+    $BASEDIR/src/stats "$STATSFILE" "$STATS_INTERVAL" &
+    STATS_ID=$!
+    echo "Collecting stats ($STATS_ID) at $(date +%T)"
+
+    #--cgroup-parent /docker/client/ \
+    docker run -d \
+        --net dc \
+        --name dc-client \
+        --cpuset-cpus=1,3,5,7,9,11,13,15,17,19,21,23,25,27,29,31,33,35 \
+        --cpuset-mems=1 \
+        -v $BASEDIR/src:/volume \
+        --entrypoint /volume/dynamic.sh \
+        --env-file "$CONFIG" -e CONNECTIONS \
+        jonassa/data-caching:client $RPS &> /dev/null
+else
+    $BASEDIR/src/stats "$STATSFILE" "$STATS_INTERVAL" &
+    STATS_ID=$!
+    echo "Collecting stats ($STATS_ID) at $(date +%T)"
+
+    #--cgroup-parent /docker/client/ \
+    docker run -d \
+        --net dc \
+        --name dc-client \
+        --cpuset-cpus=1,3,5,7,9,11,13,15,17,19,21,23,25,27,29,31,33,35 \
+        --cpuset-mems=1 \
+        -v $BASEDIR/src:/volume \
+        --env-file "$CONFIG" -e CONNECTIONS \
+        jonassa/data-caching:client $RPS &> /dev/null
+fi
+echo "Running dc-client: at $(date +%T)"
+
+# Run stress-ng
+if [ $USE_STRESS = 1 ]; then
+    echo -n "Running stress-ng: "
+    #--cgroup-parent /docker/server/ \
+    docker run -d --rm \
+        --name stress \
+        --cpuset-cpus=0,2,4,6,8,10,12,14,16,18,20,22,24,26,28,30,32,34 \
+        --cpuset-mems=0 \
+        polinux/stress-ng \
+            --vm 9 \
+            --vm-bytes 4g \
+            --metrics-brief \
+            --timeout 0
+# --cpu 18 \
+# --cpu-load 50 \
+fi
+
+echo "Benchmarking the server ..."
+docker container wait dc-client
+
+echo "--------------------------------"
+echo "Benchmark at $RPS rps complete"
+echo "--------------------------------"
+

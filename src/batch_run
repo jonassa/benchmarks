@@ -1,0 +1,44 @@
+#!/bin/bash
+
+export BASEDIR=$(dirname -- "$(dirname -- "$(readlink -f -- "$BASH_SOURCE")")")
+#cd $BASEDIR
+
+if [ $# -eq 2 ] && [[ $1 = '-f' ]]; then
+    TAG=$2
+    rm -rf "$BASEDIR/output/${TAG}"
+elif [ $# -eq 1 ]; then
+    TAG=$1
+else
+    echo "Usage: batch_run [-f] <tag>"; exit
+fi
+
+export TAG
+export CONFIG="$BASEDIR/conf/${TAG}.env"
+export OUTDIR="$BASEDIR/output/${TAG}"
+
+_clean_all() {
+    for child in $(jobs -p); do
+        kill $child
+        wait $child
+    done
+    echo "All children terminated"
+    exit
+}
+trap _clean_all SIGINT
+
+if [ -d "$OUTDIR" ]; then
+    echo "Run tag must be unique, exiting" >&2
+    exit
+fi
+
+[ -f "$CONFIG" ] || CONFIG="$BASEDIR/conf/default.env"
+echo "Using config: $CONFIG"
+
+while read var; do 
+    [ ! -z $var ] && eval "export $var"
+done < "$CONFIG"
+
+for rps in $(seq $RPS_START $RPS_STEP $RPS_STOP); do
+    $BASEDIR/src/benchmark $TAG $rps
+done
+
