@@ -2,26 +2,28 @@
 
 STATSFILE=$1
 STATS_INTERVAL=$2
-SLEEP_TIME=$(($STATS_INTERVAL - 2))
 
+:>| "$STATSFILE.time"
 :>| "$STATSFILE.tmp"
 :>| "$STATSFILE.rapl"
-#:>| "$STATSFILE.time"
-
-request_stats() {
-    #date -u --rfc-3339=ns >> "$STATSFILE.time"
-    curl -sS --unix-socket /var/run/docker.sock "http:/v1.26/containers/$SERVER_ID/stats?stream=0" >> "$STATSFILE.tmp"
-    cat /sys/class/powercap/intel-rapl:0/energy_uj >> "$STATSFILE.rapl"
-}
 
 cleanup() {
-    jq  -s . < "$STATSFILE.tmp" > "$STATSFILE.json" && rm -f "$STATSFILE.tmp"
+    kill $stream_pid
+    wait $stream_pid
+    sed '$d' "$STATSFILE.tmp" | jq  -s . > "$STATSFILE.json" && rm -f "$STATSFILE.tmp"
 }
 trap cleanup EXIT
 
+curl -sS --unix-socket /var/run/docker.sock "http:/v1.26/containers/$SERVER_ID/stats?stream=1" > "$STATSFILE.tmp" &
+stream_pid=$!
+
 while true; do
-    #echo "0" > "/sys/class/powercap/intel-rapl:0/energy_uj"
-    sleep $SLEEP_TIME
-    request_stats
+    # RAPL timestamp (or any other stats we gather here in the future)
+    # NOT accurate for docker stats API (use "read" in the response)
+    date -u --rfc-3339=ns >> "$STATSFILE.time"
+
+    /workspace/bin/rapl -s | sed -n '21p' | cut -c 15-  >> "$STATSFILE.rapl"
+    # echo "0" > "/sys/class/powercap/intel-rapl:0/energy_uj"
+    sleep 1
 done
 

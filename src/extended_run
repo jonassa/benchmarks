@@ -51,11 +51,10 @@ docker run -d --rm \
     --name dc-warmup \
     --cpuset-cpus=1,3,5,7,9,11,13,15,17,19,21,23,25,27,29,31,33,35 \
     --cpuset-mems=1 \
-    -v $BASEDIR/src:/volume \
-    --entrypoint /volume/warmup.sh \
+    -v $BASEDIR/src/warmup.sh:/entrypoint.sh \
     --env-file "$CONFIG" \
     -e CONNECTIONS \
-    jonassa/data-caching:client
+    jonassa/data-caching:client-ts
 
 echo "Warming up the server ..."
 docker container wait dc-warmup
@@ -68,26 +67,10 @@ docker run -d \
     --name dc-client \
     --cpuset-cpus=1,3,5,7,9,11,13,15,17,19,21,23,25,27,29,31,33,35 \
     --cpuset-mems=1 \
-    -v $BASEDIR/src:/volume \
-    --entrypoint /volume/extended.sh \
+    -v $BASEDIR/src/extended.sh:/entrypoint.sh \
     --env-file "$CONFIG" \
     -e CONNECTIONS \
-    jonassa/data-caching:client $RPS
-
-# Run stress-ng
-# if [ $USE_STRESS = 1 ]; then
-#     echo -n "Running stress-ng: "
-#####--cgroup-parent /docker/server/ \
-#     docker run -d --rm \
-#         --name stress \
-#         --cpuset-cpus=0,2,4,6,8,10,12,14,16,18,20,22,24,26,28,30,32,34 \
-#         --cpuset-mems=0 \
-#         polinux/stress-ng \
-#             --cpu 18 \
-#             --cpu-load 50 \
-#             --metrics-brief \
-#             --timeout 0
-# fi
+    jonassa/data-caching:client-ts $RPS
 
 echo "Benchmarking the server ..."
 docker container wait dc-client
