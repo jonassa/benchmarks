@@ -6,12 +6,11 @@ echo "dc-server, 11211" > "/usr/src/memcached/memcached_client/servers.txt"
 benchmark_step() {
     local rps=$1
 
-    echo "\n"
     echo "RPS: $rps"
     echo "Timeout: $STEP_TIME"
     echo "======================="
 
-    for i in $(seq $REPORTS_PER_STEP); do
+    for i in $(seq $N_ROWS); do
         echo "DYNAMIC RPS: $rps"
     done
 
@@ -24,9 +23,6 @@ benchmark_step() {
 if [[ -n $1 ]]; then
     RPS=$1
 
-    STEP_TIME=$(($RUNTIME / 5))
-    REPORTS_PER_STEP=$(($STEP_TIME / $STEP_INTERVAL))
-
     RPS_LOW=$(($RPS / 4)) # 25 %
     RPS_MID=$(($RPS / 2)) # 50 %
     RPS_HIGH=$RPS         # 100 %
@@ -35,7 +31,7 @@ if [[ -n $1 ]]; then
     RPS_STEPS="$RPS_LOW $RPS_MID $RPS_HIGH $RPS_MID $RPS_LOW"
 
     for rps in $RPS_STEPS; do
-        benchmark_step "$rps" "$STEP_TIME"
+        benchmark_step "$rps"
     done
 else
     bash

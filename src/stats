@@ -1,7 +1,7 @@
 #!/bin/bash
 
 STATSFILE=$1
-STATS_INTERVAL=$2
+# STATS_INTERVAL=$2
 
 :>| "$STATSFILE.time"
 :>| "$STATSFILE.tmp"

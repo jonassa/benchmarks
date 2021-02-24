@@ -21,6 +21,7 @@ mkdir -p $OUTDIR $LOGDIR $STATSDIR
 cp "$CONFIG" "$OUTDIR/conf.env"
 
 export CONNECTIONS=$(($CPW * $CLIENT_WORKERS))
+export N_ROWS=$(($RUNTIME / $STATS_INTERVAL))
 
 if [[ -f "$OUTDIR/params.txt" ]]; then
     echo "$RPS" >> $OUTDIR/params.txt
@@ -34,14 +35,24 @@ _cleanup() {
 
     kill $STATS_ID &> /dev/null
 
-    docker logs dc-client | grep -v -e "starting receive" -e "Creating worker" -e "num_worker" > "$LOGFILE.txt"
+    # TODO: 2> /dev/null
+    docker logs -t dc-client | grep -v -e "starting receive" -e "Creating worker" -e "num_worker" > "$LOGFILE.txt"
+
+    # Headers
+    echo "timestamp, timeDiff, rps, requests, gets, sets, hits, misses, avg_lat, 90th, 95th, 99th, std, min, max, avgGetSize" > "${LOGFILE}_lat.csv" 
+    echo "rps" > "$LOGFILE.rps"
 
     if [ "$DYNAMIC_LOAD" = 1 ]; then
-        grep -oP 'DYNAMIC RPS: \K\w+' "$LOGFILE.txt" > "$LOGFILE.rps"
+        grep -oP 'DYNAMIC RPS: \K\w+' "$LOGFILE.txt" >> "$LOGFILE.rps"
+        # sed -n '/timeDiff/{n;p}' "$LOGFILE.txt" | awk '$1 = $1","' | sed "1~$(($N_ROWS + 1))d" >> "${LOGFILE}_lat.csv"
+        # TODO: This is very hacky and likely to break. Consider using a new container for each dynamic rps instead.
+        sed -n '/timeDiff/{n;p}' "$LOGFILE.txt" | awk '$1 = $1","' | grep -v 161420 >> "${LOGFILE}_lat.csv"
+    else
+        for i in $(seq $N_ROWS); do
+            echo $RPS >> "$LOGFILE.rps"
+        done
+        sed -n '/timeDiff/{n;p}' "$LOGFILE.txt" | awk '$1 = $1","' | sed 1d >> "${LOGFILE}_lat.csv"
     fi
-
-    echo "timestamp, timeDiff, rps, requests, gets, sets, hits, misses, avg_lat, 90th, 95th, 99th, std, min, max, avgGetSize" > "${LOGFILE}_lat.csv" 
-    sed -n '/timeDiff/{n;p}' "$LOGFILE.txt" | awk '$2 = $2","' | sed 1d >> "${LOGFILE}_lat.csv"
 
     echo -n "timestamp " > "${LOGFILE}_osr.csv"
     for i in $(seq $CLIENT_WORKERS); do
@@ -52,7 +63,7 @@ _cleanup() {
         fi
     done
     sed -n '/Outstanding/{n;p}' "$LOGFILE.txt" | sed 1d >> "${LOGFILE}_osr.csv"
-    tr ' ' ',' < "${LOGFILE}_osr.csv" | sed 's/,$//' | sed 's/,/ /' | sed '1s/ /,/' | sponge "${LOGFILE}_osr.csv"
+    tr ' ' ',' < "${LOGFILE}_osr.csv" | sed 's/,$//' | sponge "${LOGFILE}_osr.csv"
 
     docker rm -f dc-client &> /dev/null
 
@@ -62,6 +73,9 @@ _cleanup() {
 
     echo "Cleanup performed"
     #[[ -n $(jobs -p) ]] && kill -9 $(jobs -p)
+
+    # echo "Verifying output integrity"
+    # $BASEDIR/src/test_benchmark
 }
 trap _cleanup EXIT
 
@@ -100,20 +114,12 @@ docker run -d --rm \
 echo "Warming up the server ..."
 docker container wait dc-warmup
 
-# Collect stats
-# if [ $STREAM_STATS = 1 ]; then
-#     $BASEDIR/src/stats_stream "$STATSFILE" &
-# else
-#     $BASEDIR/src/stats "$STATSFILE" $STATS_INTERVAL &
-# fi
-
-
 # Run benchmark
 if [ "$DYNAMIC_LOAD" = 1 ]; then
-    export STEP_INTERVAL=$(($STATS_INTERVAL / 5))
-    $BASEDIR/src/stats "$STATSFILE" "$STEP_INTERVAL" &
-    STATS_ID=$!
-    echo "Collecting stats ($STATS_ID) at $(date +%T)"
+
+    N_STEPS=5
+    export STEP_TIME=$(($RUNTIME / $N_STEPS))
+    export STEP_INTERVAL=$(($STATS_INTERVAL / $N_STEPS))
 
     #--cgroup-parent /docker/client/ \
     docker run -d \
@@ -122,12 +128,11 @@ if [ "$DYNAMIC_LOAD" = 1 ]; then
         --cpuset-cpus=1,3,5,7,9,11,13,15,17,19,21,23,25,27,29,31,33,35 \
         --cpuset-mems=1 \
         -v $BASEDIR/src/dynamic.sh:/entrypoint.sh \
-        --env-file "$CONFIG" -e CONNECTIONS -e STEP_INTERVAL \
+        --env-file "$CONFIG" -e CONNECTIONS \
+        -e STEP_TIME -e STEP_INTERVAL -e N_ROWS \
         jonassa/data-caching:client-ts $RPS &> /dev/null
+
 else
-    $BASEDIR/src/stats "$STATSFILE" "$STATS_INTERVAL" &
-    STATS_ID=$!
-    echo "Collecting stats ($STATS_ID) at $(date +%T)"
 
     #--cgroup-parent /docker/client/ \
     docker run -d \
@@ -138,8 +143,13 @@ else
         -v $BASEDIR/src/entrypoint.sh:/entrypoint.sh \
         --env-file "$CONFIG" -e CONNECTIONS \
         jonassa/data-caching:client-ts $RPS &> /dev/null
+
 fi
 echo "Running dc-client: at $(date +%T)"
+
+$BASEDIR/src/stats "$STATSFILE" &
+STATS_ID=$!
+echo "Collecting stats ($STATS_ID) at $(date +%T)"
 
 # Run stress-ng
 if [ "$USE_STRESS" = 1 ]; then
