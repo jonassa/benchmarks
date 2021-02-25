@@ -6,7 +6,7 @@ echo "dc-server, 11211" > "/usr/src/memcached/memcached_client/servers.txt"
 if [[ -n $1 ]]; then
     RPS=$1
 
-    printf "\n\nRPS: $RPS\nTimeout: $RUNTIME\n =======================\n"
+    printf "\nRPS: $RPS\nTimeout: $RUNTIME\n =======================\n"
 
     # Benchmark
     /usr/src/memcached/memcached_client/loader \

@@ -31,53 +31,59 @@ else
 fi
 
 _cleanup() {
-    docker rm -f stress dc-warmup &> /dev/null
+    docker rm -f dc-warmup stress dc-client &> /dev/null
 
     kill $STATS_ID &> /dev/null
-
-    # TODO: 2> /dev/null
-    docker logs -t dc-client | grep -v -e "starting receive" -e "Creating worker" -e "num_worker" > "$LOGFILE.txt"
-
-    # Headers
-    echo "timestamp, timeDiff, rps, requests, gets, sets, hits, misses, avg_lat, 90th, 95th, 99th, std, min, max, avgGetSize" > "${LOGFILE}_lat.csv" 
-    echo "rps" > "$LOGFILE.rps"
-
-    if [ "$DYNAMIC_LOAD" = 1 ]; then
-        grep -oP 'DYNAMIC RPS: \K\w+' "$LOGFILE.txt" >> "$LOGFILE.rps"
-        # sed -n '/timeDiff/{n;p}' "$LOGFILE.txt" | awk '$1 = $1","' | sed "1~$(($N_ROWS + 1))d" >> "${LOGFILE}_lat.csv"
-        # TODO: This is very hacky and likely to break. Consider using a new container for each dynamic rps instead.
-        sed -n '/timeDiff/{n;p}' "$LOGFILE.txt" | awk '$1 = $1","' | grep -v 161420 >> "${LOGFILE}_lat.csv"
-    else
-        for i in $(seq $N_ROWS); do
-            echo $RPS >> "$LOGFILE.rps"
-        done
-        sed -n '/timeDiff/{n;p}' "$LOGFILE.txt" | awk '$1 = $1","' | sed 1d >> "${LOGFILE}_lat.csv"
-    fi
-
-    echo -n "timestamp " > "${LOGFILE}_osr.csv"
-    for i in $(seq $CLIENT_WORKERS); do
-        if [[ $i = $CLIENT_WORKERS ]]; then
-            echo "osr$i" >> "${LOGFILE}_osr.csv"
-        else
-            echo -n "osr$i " >> "${LOGFILE}_osr.csv"
-        fi
-    done
-    sed -n '/Outstanding/{n;p}' "$LOGFILE.txt" | sed 1d >> "${LOGFILE}_osr.csv"
-    tr ' ' ',' < "${LOGFILE}_osr.csv" | sed 's/,$//' | sponge "${LOGFILE}_osr.csv"
-
-    docker rm -f dc-client &> /dev/null
-
     echo "Waiting for stats cleanup ..."
     wait $STATS_ID
     docker rm -f dc-server &> /dev/null
 
-    echo "Cleanup performed"
+    # Format OSR file
+    tr ' ' ',' < "${LOGFILE}.osr" | sed 's/,$//' | sponge "${LOGFILE}.osr"
+
+    echo "Cleanup done"
     #[[ -n $(jobs -p) ]] && kill -9 $(jobs -p)
 
-    # echo "Verifying output integrity"
-    # $BASEDIR/src/test_benchmark
+    echo "__________________________"
+    echo "Verifying output integrity"
+    echo "--------------------------"
+    echo "$(wc -l ${LOGFILE}.lat) = $(wc -l ${LOGFILE}.osr) = $(wc -l ${LOGFILE}.rps)"
+    echo "Collected $(jq length $STATSFILE.json) stats API responses" 
+    echo "$(wc -l $STATSFILE.time) = $(wc -l $STATSFILE.rapl)"
 }
 trap _cleanup EXIT
+
+init_logs() {
+    echo "timestamp, timeDiff, rps, requests, gets, sets, hits, misses, avg_lat, 90th, 95th, 99th, std, min, max, avgGetSize" > "${LOGFILE}.lat" 
+
+    echo -n "timestamp " > "${LOGFILE}.osr"
+    for i in $(seq $CLIENT_WORKERS); do
+        if [[ $i = $CLIENT_WORKERS ]]; then
+            echo "osr$i" >> "${LOGFILE}.osr"
+        else
+            echo -n "osr$i " >> "${LOGFILE}.osr"
+        fi
+    done
+
+    echo "rps" > "${LOGFILE}.rps"
+}
+
+process_client_logs() {
+    local rps="$1"
+    # docker logs -t dc-client | grep -v -e "starting receive" -e "Creating worker" -e "num_worker" > "${LOGFILE}_${rps}.txt"
+    # docker logs -t dc-client > "${LOGFILE}_${rps}.txt" 2> /dev/null
+    docker logs -t dc-client > "${LOGFILE}_${rps}.txt"
+
+    sed -n '/timeDiff/{n;p}' "${LOGFILE}_${rps}.txt" | awk '$1 = $1","' | sed 1d >> "${LOGFILE}.lat"
+    sed -n '/Outstanding/{n;p}' "${LOGFILE}_${rps}.txt" | sed 1d >> "${LOGFILE}.osr"
+
+    step_n_rows=$(sed -n '/timeDiff/{n;p}' "${LOGFILE}_${rps}.txt" | sed 1d | wc -l)
+    for i in $(seq $step_n_rows); do
+        echo $rps >> "$LOGFILE.rps"
+    done
+
+    docker rm -f dc-client &> /dev/null
+}
 
 printf "\n============================================================================================\n"
 printf "Benchmarking memcached with $RPS attempted RPS, for $(expr $RUNTIME / 60) minutes, reporting every $STATS_INTERVAL seconds"
@@ -117,59 +123,79 @@ docker container wait dc-warmup
 # Run benchmark
 if [ "$DYNAMIC_LOAD" = 1 ]; then
 
+    run_dynamic_step() {
+        local rps="$1"
+        echo -n "Benchmarking $rps rps, started at $(date +%T), dc-client: "
+        docker run -d \
+            --net dc \
+            --name dc-client \
+            --cpuset-cpus=1,3,5,7,9,11,13,15,17,19,21,23,25,27,29,31,33,35 \
+            --cpuset-mems=1 \
+            -v $BASEDIR/src/dynamic.sh:/entrypoint.sh \
+            --env-file "$CONFIG" -e CONNECTIONS \
+            -e STEP_TIME -e STEP_INTERVAL -e N_ROWS \
+            jonassa/data-caching:client-ts $rps
+    }
+
     N_STEPS=5
     export STEP_TIME=$(($RUNTIME / $N_STEPS))
     export STEP_INTERVAL=$(($STATS_INTERVAL / $N_STEPS))
 
-    #--cgroup-parent /docker/client/ \
-    docker run -d \
-        --net dc \
-        --name dc-client \
-        --cpuset-cpus=1,3,5,7,9,11,13,15,17,19,21,23,25,27,29,31,33,35 \
-        --cpuset-mems=1 \
-        -v $BASEDIR/src/dynamic.sh:/entrypoint.sh \
-        --env-file "$CONFIG" -e CONNECTIONS \
-        -e STEP_TIME -e STEP_INTERVAL -e N_ROWS \
-        jonassa/data-caching:client-ts $RPS &> /dev/null
+    RPS_LOW=$(($RPS / 4)) # 25 %
+    RPS_MID=$(($RPS / 2)) # 50 %
+    RPS_HIGH=$RPS         # 100 %
+
+    # Five-step benchmark: 25 -> 50 -> 100 -> 50 -> 25
+    RPS_STEPS="$RPS_LOW $RPS_MID $RPS_HIGH $RPS_MID $RPS_LOW"
+
+    $BASEDIR/src/stats "$STATSFILE" & STATS_ID=$!
+    echo "Stats collection started at $(date +%T): $STATS_ID"
+
+    init_logs
+
+    # Dynamic steps
+    for rps in $RPS_STEPS; do
+        run_dynamic_step "$rps"
+        echo "Benchmarking the server ..."
+        docker container wait dc-client
+        process_client_logs "$rps"
+    done
+
 
 else
-
-    #--cgroup-parent /docker/client/ \
-    docker run -d \
-        --net dc \
-        --name dc-client \
-        --cpuset-cpus=1,3,5,7,9,11,13,15,17,19,21,23,25,27,29,31,33,35 \
-        --cpuset-mems=1 \
-        -v $BASEDIR/src/entrypoint.sh:/entrypoint.sh \
-        --env-file "$CONFIG" -e CONNECTIONS \
-        jonassa/data-caching:client-ts $RPS &> /dev/null
+    echo "Only dynamic loads are supported atm" >&2
+    exit
+    # docker run -d \
+    #     --net dc \
+    #     --name dc-client \
+    #     --cpuset-cpus=1,3,5,7,9,11,13,15,17,19,21,23,25,27,29,31,33,35 \
+    #     --cpuset-mems=1 \
+    #     -v $BASEDIR/src/entrypoint.sh:/entrypoint.sh \
+    #     --env-file "$CONFIG" -e CONNECTIONS \
+    #     jonassa/data-caching:client-ts $RPS &> /dev/null
 
 fi
-echo "Running dc-client: at $(date +%T)"
 
-$BASEDIR/src/stats "$STATSFILE" &
-STATS_ID=$!
-echo "Collecting stats ($STATS_ID) at $(date +%T)"
+# TODO: allow for stress-ng with dynamic load
+## Run stress-ng
+#if [ "$USE_STRESS" = 1 ]; then
+#    echo -n "Running stress-ng: "
+#    #--cgroup-parent /docker/server/ \
+#    docker run -d --rm \
+#        --name stress \
+#        --cpuset-cpus=0,2,4,6,8,10,12,14,16,18,20,22,24,26,28,30,32,34 \
+#        --cpuset-mems=0 \
+#        polinux/stress-ng \
+#            --vm 9 \
+#            --vm-bytes 4g \
+#            --metrics-brief \
+#            --timeout 0
+## --cpu 18 \
+## --cpu-load 50 \
+#fi
 
-# Run stress-ng
-if [ "$USE_STRESS" = 1 ]; then
-    echo -n "Running stress-ng: "
-    #--cgroup-parent /docker/server/ \
-    docker run -d --rm \
-        --name stress \
-        --cpuset-cpus=0,2,4,6,8,10,12,14,16,18,20,22,24,26,28,30,32,34 \
-        --cpuset-mems=0 \
-        polinux/stress-ng \
-            --vm 9 \
-            --vm-bytes 4g \
-            --metrics-brief \
-            --timeout 0
-# --cpu 18 \
-# --cpu-load 50 \
-fi
-
-echo "Benchmarking the server ..."
-docker container wait dc-client
+# echo "Benchmarking the server ..."
+# docker container wait dc-client
 
 echo "--------------------------------"
 echo "Benchmark at $RPS rps complete"
