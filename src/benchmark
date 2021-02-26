@@ -31,9 +31,13 @@ else
 fi
 
 _cleanup() {
-    docker rm -f dc-warmup stress dc-client &> /dev/null
+    docker rm -f dc-warmup dc-client &> /dev/null
 
-    kill $STATS_ID &> /dev/null
+    docker logs stress > "${LOGFILE}_stress.log"
+    docker rm -f stress &> /dev/null
+
+    # kill $STATS_ID &> /dev/null
+    kill $STATS_ID
     echo "Waiting for stats cleanup ..."
     wait $STATS_ID
     docker rm -f dc-server &> /dev/null
@@ -41,9 +45,12 @@ _cleanup() {
     # Format OSR file
     tr ' ' ',' < "${LOGFILE}.osr" | sed 's/,$//' | sponge "${LOGFILE}.osr"
 
-    echo "Cleanup done"
-    #[[ -n $(jobs -p) ]] && kill -9 $(jobs -p)
+    # TODO: get eris logs, parse, into output
+    kill $ERIS_ID &> /dev/null
 
+    echo "Cleanup has been completed"
+
+    # TODO: actually verify
     echo "__________________________"
     echo "Verifying output integrity"
     echo "--------------------------"
@@ -121,6 +128,30 @@ docker run -d --rm \
 echo "Warming up the server ..."
 docker container wait dc-warmup
 
+# Run stress-ng
+if [ "$USE_STRESS" = 1 ]; then
+    echo -n "Running stress-ng: "
+    #--cgroup-parent /docker/server/ \
+    docker run -d --rm \
+        --name stress \
+        --cpuset-cpus=0,2,4,6,8,10,12,14,16,18,20,22,24,26,28,30,32,34 \
+        --cpuset-mems=0 \
+        polinux/stress-ng \
+            --metrics-brief --timeout 0 \
+            $STRESS_PARAMS
+fi
+
+# Start eris
+if [ "$USE_ERIS" = 1 ]; then
+    ERIS_ID=$(run_eris)
+    echo "Running eris: $ERIS_ID"
+fi
+
+# --vm 9 \
+# --vm-bytes 4g \
+# --cpu 18 \
+# --cpu-load 50 \
+
 # Run benchmark
 if [ "$DYNAMIC_LOAD" = 1 ]; then
 
@@ -176,24 +207,6 @@ else
     #     jonassa/data-caching:client-ts $RPS &> /dev/null
 
 fi
-
-# TODO: allow for stress-ng with dynamic load
-## Run stress-ng
-#if [ "$USE_STRESS" = 1 ]; then
-#    echo -n "Running stress-ng: "
-#    #--cgroup-parent /docker/server/ \
-#    docker run -d --rm \
-#        --name stress \
-#        --cpuset-cpus=0,2,4,6,8,10,12,14,16,18,20,22,24,26,28,30,32,34 \
-#        --cpuset-mems=0 \
-#        polinux/stress-ng \
-#            --vm 9 \
-#            --vm-bytes 4g \
-#            --metrics-brief \
-#            --timeout 0
-## --cpu 18 \
-## --cpu-load 50 \
-#fi
 
 # echo "Benchmarking the server ..."
 # docker container wait dc-client
