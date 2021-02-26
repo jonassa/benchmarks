@@ -72,6 +72,7 @@ process_client_logs() {
     local rps="$1"
     # docker logs -t dc-client | grep -v -e "starting receive" -e "Creating worker" -e "num_worker" > "${LOGFILE}_${rps}.txt"
     # docker logs -t dc-client > "${LOGFILE}_${rps}.txt" 2> /dev/null
+    # TODO: rps not unique, might as well use a single .txt file
     docker logs -t dc-client > "${LOGFILE}_${rps}.txt"
 
     sed -n '/timeDiff/{n;p}' "${LOGFILE}_${rps}.txt" | awk '$1 = $1","' | sed 1d >> "${LOGFILE}.lat"

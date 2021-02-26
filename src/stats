@@ -24,6 +24,6 @@ while true; do
 
     /workspace/bin/rapl -s | sed -n '21p' | cut -c 15-  >> "$STATSFILE.rapl"
     # echo "0" > "/sys/class/powercap/intel-rapl:0/energy_uj"
-    sleep 1
+    # sleep 1
 done
 
