@@ -1,0 +1,33 @@
+#!/bin/bash
+# set -ex
+
+cd /opt/platform-resource-manager/eris && pwd
+
+test -d logs || mkdir logs
+LOGDIR="logs/$(date +%m_%d_%H:%M)"
+
+if [ -d "$LOGDIR" ]; then
+    rm -rf $LOGDIR
+fi
+mkdir "$LOGDIR"
+
+# TODO: backup these before deleting
+# rm metric.csv util.csv threshold.json && echo "Removed metric.csv, util.csv and threshold.json"
+rm metric.csv util.csv && echo "Removed metric.csv and util.csv"
+test -f threshold.json && echo "Back up and rename threshold.json before retraining!" && exit
+
+echo "Workload configuration:"
+bat workload.json 2> /dev/null || cat workload.json
+
+echo "Starting extended run"
+extended_run &
+
+echo "Collecting data ..."
+# python3 eris.py --collect-metrics --record workload.json 2>&1 | tee "$LOGDIR/collect.log"
+python3 eris.py --collect-metrics --record workload.json &> "$LOGDIR/collect.log"
+
+echo "Analyzing data ... "
+# python3 analyze.py workload.json 2>&1 | tee "$LOGDIR/analyze.log"
+# python3 analyze.py workload.json 2> "$LOGDIR/analyze.err" | tee "$LOGDIR/analyze.log"
+python3 analyze.py workload.json > "$LOGDIR/analyze.log" 2> "$LOGDIR/analyze.err" 
+

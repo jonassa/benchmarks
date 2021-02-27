@@ -38,6 +38,13 @@ while read var; do
     [ ! -z $var ] && eval "export $var"
 done < "$CONFIG"
 
+declare -A profiles=( \
+    ["mem"]="--vm 9 --vm-bytes 4g" \
+    ["cpu"]="--cpu 18 --cpu-load 50" \
+)
+
+export STRESS_PARAMS="${profiles[$STRESS_PROFILE]}"
+
 for rps in $(seq $RPS_START $RPS_STEP $RPS_STOP); do
     $BASEDIR/src/benchmark $TAG $rps
 done

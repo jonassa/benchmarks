@@ -49,6 +49,7 @@ _cleanup() {
     kill $ERIS_ID &> /dev/null
 
     echo "Cleanup has been completed"
+    [ ! -z $(jobs -p) ] && kill -9 $(jobs -p)
 
     # TODO: actually verify
     echo "__________________________"
@@ -73,6 +74,20 @@ init_logs() {
     done
 
     echo "rps" > "${LOGFILE}.rps"
+}
+
+run_dynamic_step() {
+    local rps="$1"
+    echo -n "Benchmarking $rps rps, started at $(date +%T), dc-client: "
+    docker run -d \
+        --net dc \
+        --name dc-client \
+        --cpuset-cpus=1,3,5,7,9,11,13,15,17,19,21,23,25,27,29,31,33,35 \
+        --cpuset-mems=1 \
+        -v $BASEDIR/src/entrypoints/dynamic.sh:/entrypoint.sh \
+        --env-file "$CONFIG" -e CONNECTIONS \
+        -e STEP_TIME -e STEP_INTERVAL -e N_ROWS \
+        jonassa/data-caching:client-ts $rps
 }
 
 process_client_logs() {
@@ -121,7 +136,7 @@ docker run -d --rm \
     --name dc-warmup \
     --cpuset-cpus=1,3,5,7,9,11,13,15,17,19,21,23,25,27,29,31,33,35 \
     --cpuset-mems=1 \
-    -v $BASEDIR/src/warmup.sh:/entrypoint.sh \
+    -v $BASEDIR/src/entrypoints/warmup.sh:/entrypoint.sh \
     --env-file "$CONFIG" -e CONNECTIONS \
     jonassa/data-caching:client-ts
 
@@ -154,20 +169,6 @@ fi
 
 # Run benchmark
 if [ "$DYNAMIC_LOAD" = 1 ]; then
-
-    run_dynamic_step() {
-        local rps="$1"
-        echo -n "Benchmarking $rps rps, started at $(date +%T), dc-client: "
-        docker run -d \
-            --net dc \
-            --name dc-client \
-            --cpuset-cpus=1,3,5,7,9,11,13,15,17,19,21,23,25,27,29,31,33,35 \
-            --cpuset-mems=1 \
-            -v $BASEDIR/src/dynamic.sh:/entrypoint.sh \
-            --env-file "$CONFIG" -e CONNECTIONS \
-            -e STEP_TIME -e STEP_INTERVAL -e N_ROWS \
-            jonassa/data-caching:client-ts $rps
-    }
 
     N_STEPS=5
     export STEP_TIME=$(($RUNTIME / $N_STEPS))
@@ -202,7 +203,7 @@ else
     #     --name dc-client \
     #     --cpuset-cpus=1,3,5,7,9,11,13,15,17,19,21,23,25,27,29,31,33,35 \
     #     --cpuset-mems=1 \
-    #     -v $BASEDIR/src/entrypoint.sh:/entrypoint.sh \
+    #     -v $BASEDIR/src/entrypoints/entrypoint.sh:/entrypoint.sh \
     #     --env-file "$CONFIG" -e CONNECTIONS \
     #     jonassa/data-caching:client-ts $RPS &> /dev/null
 

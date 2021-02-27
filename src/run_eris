@@ -1,0 +1,16 @@
+#!/bin/bash
+
+cd /opt/platform-resource-manager/eris
+
+test -d logs || mkdir logs
+LOGDIR="logs/$(date +%m_%d_%H:%M)"
+
+if [ -d "$LOGDIR" ]; then
+    rm -rf $LOGDIR
+fi
+mkdir "$LOGDIR"
+
+numactl --cpunodebind=0 --membind=0 \
+    python3 eris.py --collect-metrics --record --detect --control workload.json > "$LOGDIR/manage.log" 2> "$LOGDIR/manage.err" &
+
+echo $!
