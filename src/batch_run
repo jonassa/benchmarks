@@ -46,6 +46,7 @@ declare -A profiles=( \
 export STRESS_PARAMS="${profiles[$STRESS_PROFILE]}"
 
 for rps in $(seq $RPS_START $RPS_STEP $RPS_STOP); do
-    $BASEDIR/src/benchmark $TAG $rps
+    numactl --cpunodebind=1 --membind=1 \
+        $BASEDIR/src/benchmark $TAG $rps
 done
 
