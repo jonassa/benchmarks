@@ -11,6 +11,6 @@ fi
 mkdir "$LOGDIR"
 
 numactl --cpunodebind=0 --membind=0 \
-    python3 eris.py --collect-metrics --record --detect --control workload.json > "$LOGDIR/manage.log" 2> "$LOGDIR/manage.err" &
+    python3 eris.py -v --collect-metrics --record --detect --control workload.json &> "$LOGDIR/manage.log" &
 
 echo $!
