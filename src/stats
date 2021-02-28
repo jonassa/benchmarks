@@ -17,6 +17,10 @@ trap cleanup EXIT
 curl -sS --unix-socket /var/run/docker.sock "http:/v1.26/containers/$SERVER_ID/stats?stream=1" > "$STATSFILE.tmp" &
 stream_pid=$!
 
+# TODO: collect stress-ng stats
+# curl -sS --unix-socket /var/run/docker.sock "http:/v1.26/containers/$STRESS_ID/stats?stream=1" > "$STATSFILE.tmp" &
+# stream_stress_pid=$!
+
 while true; do
     # RAPL timestamp (or any other stats we gather here in the future)
     # NOT accurate for docker stats API (use "read" in the response)

@@ -35,7 +35,7 @@ fi
 _cleanup() {
     docker rm -f dc-warmup dc-client &> /dev/null
 
-    docker logs stress > "${LOGFILE}_stress.log"
+    docker logs stress > "${LOGFILE}.stress"
     docker rm -f stress &> /dev/null
 
     kill "$STATS_ID"
@@ -46,12 +46,11 @@ _cleanup() {
     # Format OSR file
     tr ' ' ',' < "${LOGFILE}.osr" | sed 's/,$//' | sponge "${LOGFILE}.osr"
 
+    # Parse eris output
     kill "$ERIS_ID"
-    grep "set container stress cpu share" "$ERIS_LOG.log" > "$ERIS_LOG.share"
-    grep "set container stress quota" "$ERIS_LOG.log" | sed 's/ERROR.*//' > "$ERIS_LOG.quota"
-    grep "set container stress llc" "$ERIS_LOG.log" > "$ERIS_LOG.llc"
-
-    
+    grep "set container stress cpu quota" "$ERIS_LOG.log" | sed 's/ERROR.*//' | awk '$2 = $2","' | awk '{print $1,$2,$9}' > "$ERIS_LOG.quota"
+    # grep "set container stress cpu share" "$ERIS_LOG.log" > "$ERIS_LOG.share"
+    # grep "set container stress llc" "$ERIS_LOG.log" > "$ERIS_LOG.llc"
 
     echo "Cleanup has been completed"
     [ ! -z $(jobs -p) ] && kill -9 $(jobs -p)
@@ -124,7 +123,6 @@ printf "\n======================================================================
 docker rm -f dc-server dc-client dc-warmup stress &> /dev/null
 
 # Start server
-#--cgroup-parent /docker/server/ \
 export SERVER_ID=$(docker run -d \
     --net dc \
     --name dc-server \
@@ -136,7 +134,6 @@ echo "Running dc-server: $SERVER_ID"
 
 # Warm up server
 echo -n "Running dc-warmup: "
-# --cgroup-parent /docker/client/ \
 docker run -d --rm \
     --net dc \
     --name dc-warmup \
@@ -153,9 +150,10 @@ docker container wait dc-warmup
 if [ "$USE_ERIS" = 1 ]; then
     cd /opt/platform-resource-manager/eris
 
+    # ts "%F %R:%.S%z"
+    export TZ='UTC'
     numactl --cpunodebind=0 --membind=0 \
         python3 eris.py -v --collect-metrics --record --detect --control workload.json &> "$ERIS_LOG.log" &
-
     ERIS_ID=$!
     echo "Running eris: $ERIS_ID"
     cd -
@@ -168,15 +166,14 @@ fi
 
 # Run stress-ng
 if [ "$USE_STRESS" = 1 ]; then
-    echo -n "Running stress-ng: "
-    #--cgroup-parent /docker/server/ \
-    docker run -d --rm \
+    export STRESS_ID=$(docker run -d --rm \
         --name stress \
         --cpuset-cpus=0,2,4,6,8,10,12,14,16,18,20,22,24,26,28,30,32,34 \
         --cpuset-mems=0 \
         polinux/stress-ng \
             --metrics-brief --timeout 0 \
-            $STRESS_PARAMS
+            $STRESS_PARAMS)
+    echo -n "Running stress-ng: $STRESS_ID"
 fi
 
 # --vm 9 \
