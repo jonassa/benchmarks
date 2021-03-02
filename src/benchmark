@@ -150,19 +150,13 @@ docker container wait dc-warmup
 if [ "$USE_ERIS" = 1 ]; then
     cd /opt/platform-resource-manager/eris
 
-    # ts "%F %R:%.S%z"
     export TZ='UTC'
     numactl --cpunodebind=0 --membind=0 \
-        python3 eris.py -v --collect-metrics --record --detect --control workload.json &> "$ERIS_LOG.log" &
+        python3 eris.py -v --collect-metrics --record --detect --control -t "models/${ERIS_MODEL}.json" workload.json &> "$ERIS_LOG.log" &
     ERIS_ID=$!
     echo "Running eris: $ERIS_ID"
     cd -
 fi
-
-# if [ "$USE_ERIS" = 1 ]; then
-#     ERIS_ID=$(run_eris)
-#     echo "Running eris: $ERIS_ID"
-# fi
 
 # Run stress-ng
 if [ "$USE_STRESS" = 1 ]; then
@@ -183,22 +177,28 @@ fi
 
 # Run benchmark
 if [ "$DYNAMIC_LOAD" = 1 ]; then
+    init_logs
 
     N_STEPS=5
     export STEP_TIME=$(($RUNTIME / $N_STEPS))
     export STEP_INTERVAL=$(($STATS_INTERVAL / $N_STEPS))
 
-    RPS_LOW=$(($RPS / 4)) # 25 %
-    RPS_MID=$(($RPS / 2)) # 50 %
-    RPS_HIGH=$RPS         # 100 %
-
+    # TODO: make dynamic profile configurable
     # Five-step benchmark: 25 -> 50 -> 100 -> 50 -> 25
-    RPS_STEPS="$RPS_LOW $RPS_MID $RPS_HIGH $RPS_MID $RPS_LOW"
+    # RPS_LOW=$(($RPS / 3))
+    # RPS_MID=$(($RPS / 2))
+    # RPS_HIGH=$RPS
+    # RPS_VERY_HIGH=$RPS
+
+    RPS_LOW=250000
+    RPS_MID=400000
+    RPS_HIGH=450000
+    RPS_VERY_HIGH=500000
+
+    RPS_STEPS="$RPS_MID $RPS_HIGH $RPS_LOW $RPS_VERY_HIGH $RPS_MID"
 
     $BASEDIR/src/stats "$STATSFILE" & STATS_ID=$!
     echo "Stats collection started at $(date +%T): $STATS_ID"
-
-    init_logs
 
     # Dynamic steps
     for rps in $RPS_STEPS; do
@@ -207,10 +207,8 @@ if [ "$DYNAMIC_LOAD" = 1 ]; then
         docker container wait dc-client
         process_client_logs "$rps"
     done
-
-
 else
-    echo "Only dynamic loads are supported atm" >&2
+    echo "Only dynamic loads are supported atm"
     exit
     # docker run -d \
     #     --net dc \

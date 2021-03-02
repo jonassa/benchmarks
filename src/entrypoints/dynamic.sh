@@ -1,5 +1,5 @@
 #!/bin/bash
-set -ex
+# set -ex
 
 echo "dc-server, 11211" > "/usr/src/memcached/memcached_client/servers.txt"
 
