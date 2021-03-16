@@ -1,7 +1,6 @@
 #!/bin/bash
 
 STATSFILE=$1
-# STATS_INTERVAL=$2
 
 :>| "$STATSFILE.time"
 :>| "$STATSFILE.tmp"
@@ -26,7 +25,10 @@ while true; do
     # NOT accurate for docker stats API (use "read" in the response)
     date -u --rfc-3339=ns >> "$STATSFILE.time"
 
-    /workspace/bin/rapl -s | sed -n '21p' | cut -c 15-  >> "$STATSFILE.rapl"
+    # Assuming package 0 corresponds to node 0
+    /workspace/bin/rapl -s | grep package-0 | awk '{print $3}' >> "$STATSFILE.rapl"
+    # /workspace/bin/rapl -s | grep package-1 | awk '{print $3}' >> "$STATSFILE.rapl"
+
     # echo "0" > "/sys/class/powercap/intel-rapl:0/energy_uj"
     # sleep 1
 done

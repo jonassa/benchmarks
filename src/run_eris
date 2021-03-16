@@ -1,6 +1,8 @@
 #!/bin/bash
 
-cd /opt/platform-resource-manager/eris
+cd /opt/platform-resource-manager
+source .direnv/python-3.6.8/bin/activate
+cd eris
 
 test -d logs || mkdir logs
 LOGDIR="logs/$(date +%m_%d_%H:%M)"
@@ -11,6 +13,5 @@ fi
 mkdir "$LOGDIR"
 
 numactl --cpunodebind=0 --membind=0 \
-    python3 eris.py -v --collect-metrics --record --detect --control workload.json &> "$LOGDIR/manage.log" &
+    python3 eris.py -v --collect-metrics --record --detect --control workload.json # &> "$LOGDIR/manage.log"
 
-echo $!

@@ -33,13 +33,14 @@ else
 fi
 
 _cleanup() {
+    kill $STATS_ID
+    kill $ERIS_ID
+
     docker rm -f dc-warmup dc-client &> /dev/null
 
     docker logs stress > "${LOGFILE}.stress"
     docker rm -f stress &> /dev/null
 
-    kill "$STATS_ID"
-    echo "Waiting for stats cleanup ..."
     wait $STATS_ID
     docker rm -f dc-server &> /dev/null
 
@@ -47,21 +48,20 @@ _cleanup() {
     tr ' ' ',' < "${LOGFILE}.osr" | sed 's/,$//' | sponge "${LOGFILE}.osr"
 
     # Parse eris output
-    kill "$ERIS_ID"
     grep "set container stress cpu quota" "$ERIS_LOG.log" | sed 's/ERROR.*//' | awk '$2 = $2","' | awk '{print $1,$2,$9}' > "$ERIS_LOG.quota"
-    # grep "set container stress cpu share" "$ERIS_LOG.log" > "$ERIS_LOG.share"
-    # grep "set container stress llc" "$ERIS_LOG.log" > "$ERIS_LOG.llc"
 
-    echo "Cleanup has been completed"
     [ ! -z $(jobs -p) ] && kill -9 $(jobs -p)
 
-    # TODO: actually verify
-    echo "__________________________"
+    echo "--------------------------"
     echo "Verifying output integrity"
     echo "--------------------------"
-    echo "$(wc -l ${LOGFILE}.lat) = $(wc -l ${LOGFILE}.osr) = $(wc -l ${LOGFILE}.rps)"
+    wc -l ${LOGFILE}.lat
+    wc -l ${LOGFILE}.osr
+    wc -l ${LOGFILE}.rps
+
     echo "Collected $(jq length $STATSFILE.json) stats API responses" 
-    echo "$(wc -l $STATSFILE.time) = $(wc -l $STATSFILE.rapl)"
+    wc -l $STATSFILE.rapl
+    wc -l $STATSFILE.time
 }
 trap _cleanup EXIT
 
@@ -91,21 +91,18 @@ run_dynamic_step() {
         -v $BASEDIR/src/entrypoints/dynamic.sh:/entrypoint.sh \
         --env-file "$CONFIG" -e CONNECTIONS \
         -e STEP_TIME -e STEP_INTERVAL -e N_ROWS \
-        jonassa/data-caching:client-ts $rps
+        jonassa/data-caching:client $rps
 }
 
 process_client_logs() {
     local rps="$1"
-    # docker logs -t dc-client | grep -v -e "starting receive" -e "Creating worker" -e "num_worker" > "${LOGFILE}_${rps}.txt"
-    # docker logs -t dc-client > "${LOGFILE}_${rps}.txt" 2> /dev/null
-    # TODO: rps not unique, might as well use a single .txt file
-    # docker logs -t dc-client > "${LOGFILE}_${rps}.txt"
     docker logs -t dc-client > "${LOGFILE}.txt" 2> /dev/null
 
     sed -n '/timeDiff/{n;p}' "${LOGFILE}.txt" | awk '$1 = $1","' | sed 1d >> "${LOGFILE}.lat"
     sed -n '/Outstanding/{n;p}' "${LOGFILE}.txt" | sed 1d >> "${LOGFILE}.osr"
 
     step_n_rows=$(sed -n '/timeDiff/{n;p}' "${LOGFILE}.txt" | sed 1d | wc -l)
+    
     for i in $(seq $step_n_rows); do
         echo $rps >> "$LOGFILE.rps"
     done
@@ -141,13 +138,14 @@ docker run -d --rm \
     --cpuset-mems=1 \
     -v $BASEDIR/src/entrypoints/warmup.sh:/entrypoint.sh \
     --env-file "$CONFIG" -e CONNECTIONS \
-    jonassa/data-caching:client-ts
+    jonassa/data-caching:client
 
 echo "Warming up the server ..."
 docker container wait dc-warmup
 
 # Start eris
 if [ "$USE_ERIS" = 1 ]; then
+    source /opt/platform-resource-manager/.direnv/python-3.6.8/bin/activate
     cd /opt/platform-resource-manager/eris
 
     export TZ='UTC'
@@ -184,11 +182,6 @@ if [ "$DYNAMIC_LOAD" = 1 ]; then
     export STEP_INTERVAL=$(($STATS_INTERVAL / $N_STEPS))
 
     # TODO: make dynamic profile configurable
-    # Five-step benchmark: 25 -> 50 -> 100 -> 50 -> 25
-    # RPS_LOW=$(($RPS / 3))
-    # RPS_MID=$(($RPS / 2))
-    # RPS_HIGH=$RPS
-    # RPS_VERY_HIGH=$RPS
 
     RPS_LOW=250000
     RPS_MID=400000
@@ -217,7 +210,7 @@ else
     #     --cpuset-mems=1 \
     #     -v $BASEDIR/src/entrypoints/entrypoint.sh:/entrypoint.sh \
     #     --env-file "$CONFIG" -e CONNECTIONS \
-    #     jonassa/data-caching:client-ts $RPS &> /dev/null
+    #     jonassa/data-caching:client $RPS &> /dev/null
 
 fi
 

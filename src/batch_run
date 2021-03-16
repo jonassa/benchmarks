@@ -34,8 +34,8 @@ fi
 [ -f "$CONFIG" ] || CONFIG="$BASEDIR/conf/default.env"
 echo "Using config: $CONFIG"
 
-while read var; do 
-    [ ! -z $var ] && eval "export $var"
+while read line; do 
+    [[ -n $line ]] && [[ ! $line =~ ^# ]] && eval "export $line"
 done < "$CONFIG"
 
 declare -A profiles=( \
@@ -43,7 +43,9 @@ declare -A profiles=( \
     ["cpu"]="--cpu 18 --cpu-load 50" \
 )
 
-export STRESS_PARAMS="${profiles[$STRESS_PROFILE]}"
+if [[ -n $STRESS_PROFILE ]]; then
+    export STRESS_PARAMS="${profiles[$STRESS_PROFILE]}"
+fi
 
 for rps in $(seq $RPS_START $RPS_STEP $RPS_STOP); do
     numactl --cpunodebind=1 --membind=1 \

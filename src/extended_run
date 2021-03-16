@@ -58,7 +58,7 @@ run_client -d --rm \
     --name dc-warmup \
     -v $BASEDIR/src/entrypoints/warmup.sh:/entrypoint.sh \
     --env-file "$CONFIG" -e CONNECTIONS \
-    jonassa/data-caching:client-ts
+    jonassa/data-caching:client
 
 echo "Warming up the server ..."
 docker container wait dc-warmup
@@ -82,7 +82,7 @@ run_client -d \
     --name dc-client \
     -v $BASEDIR/src/entrypoints/extended.sh:/entrypoint.sh \
     --env-file "$CONFIG" -e CONNECTIONS \
-    jonassa/data-caching:client-ts $RPS
+    jonassa/data-caching:client $RPS
 
 echo "Benchmarking the server ..."
 docker container wait dc-client
