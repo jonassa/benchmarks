@@ -117,13 +117,22 @@ void printGlobalStats(struct config* config) {
   double q90 = findQuantile(&global_stats.response_time, .90);
   double q95 = findQuantile(&global_stats.response_time, .95);
   double q99 = findQuantile(&global_stats.response_time, .99);
-  
+
+
+
   time_t tmp = (time_t)currentTime.tv_sec;
+
   char* timestamp = ctime(&tmp);
+
+  /* char timestamp[80]; */
+  /* struct tm ts; */
+  /* ts = *gmtime(&tmp); */
+  /* strftime(timestamp, sizeof(timestamp), "%a %Y-%m-%d %H:%M:%S %Z", &ts); */
+  /* strftime(timestamp, sizeof(timestamp), "%F %R:%S%z", &ts); */
 
 
   printf("%11s, %10s,%8s,%16s, %8s,%11s,%10s,%13s,%10s,%10s,%10s,%12s,%10s,%10s,%11s,%14s\n", "timestamp", "timeDiff", "rps", "requests", "gets", "sets",  "hits", "misses", "avg_lat", "90th", "95th", "99th", "std", "min", "max", "avgGetSize");
-  printf("%80s, %10f, %9.1f,  %10d, %10d, %10d, %10d, %10d, %10f, %10f, %10f, %10f, %10f, %10f, %10f, %10f\n", 
+  printf("%26s, %10f, %9.1f,  %10d, %10d, %10d, %10d, %10d, %10f, %10f, %10f, %10f, %10f, %10f, %10f, %10f\n", 
 		timestamp, timeDiff, rps, global_stats.requests, global_stats.gets, global_stats.sets, global_stats.hits, global_stats.misses,
 		1000*getAvg(&global_stats.response_time), 1000*q90, 1000*q95, 1000*q99, 1000*std, 1000*global_stats.response_time.min, 1000*global_stats.response_time.max, getAvg(&global_stats.get_size));
   
