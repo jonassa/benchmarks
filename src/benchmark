@@ -14,7 +14,8 @@ fi
 
 LOGDIR="$OUTDIR/logs"
 STATSDIR="$OUTDIR/stats"
-ERIS_DIR="$OUTDIR/eris"
+ERIS_DIR="$BASEDIR/$OUTDIR/eris"
+
 LOGFILE="$LOGDIR/$RPS"
 STATSFILE="$STATSDIR/$RPS"
 ERIS_LOG="$ERIS_DIR/$RPS"
@@ -22,7 +23,6 @@ ERIS_LOG="$ERIS_DIR/$RPS"
 mkdir -p $LOGDIR $STATSDIR $ERIS_DIR
 cp "$CONFIG" "$OUTDIR/conf.env"
 
-export CONNECTIONS=$(($CPW * $CLIENT_WORKERS))
 export N_ROWS=$(($RUNTIME / $STATS_INTERVAL))
 
 if [[ -f "$OUTDIR/params.txt" ]]; then
@@ -36,7 +36,7 @@ _cleanup() {
     kill $STATS_ID
     kill $ERIS_ID
 
-    docker rm -f dc-warmup dc-client &> /dev/null
+    docker rm -f dc-client &> /dev/null
 
     docker logs stress > "${LOGFILE}.stress"
     docker rm -f stress &> /dev/null
@@ -81,31 +81,30 @@ init_logs() {
 }
 
 run_dynamic_step() {
-    local rps="$1"
-    echo -n "Benchmarking $rps rps, started at $(date +%T), dc-client: "
+    echo -n "Benchmarking, started at $(date +%T), dc-client: "
     docker run -d \
         --net dc \
         --name dc-client \
         --cpuset-cpus=1,3,5,7,9,11,13,15,17,19,21,23,25,27,29,31,33,35 \
         --cpuset-mems=1 \
-        -v $BASEDIR/src/entrypoints/dynamic.sh:/entrypoint.sh \
-        --env-file "$CONFIG" -e CONNECTIONS \
-        -e STEP_TIME -e STEP_INTERVAL -e N_ROWS \
-        jonassa/data-caching:client $rps
+        -v $BASEDIR/dc-client/entrypoints:/usr/local/bin \
+        -v $BASEDIR/load/$LOAD.cfg:/load.cfg \
+        --env-file $CONFIG \
+        jonassa/benchmarks:dc-client dynamic.sh
 }
 
 process_client_logs() {
-    local rps="$1"
-    docker logs -t dc-client > "${LOGFILE}.txt" 2> /dev/null
+    # local rps="$1"
+    docker logs dc-client > "${LOGFILE}.txt" 2> /dev/null
 
     sed -n '/timeDiff/{n;p}' "${LOGFILE}.txt" | awk '$1 = $1","' | sed 1d >> "${LOGFILE}.lat"
     sed -n '/Outstanding/{n;p}' "${LOGFILE}.txt" | sed 1d >> "${LOGFILE}.osr"
 
     step_n_rows=$(sed -n '/timeDiff/{n;p}' "${LOGFILE}.txt" | sed 1d | wc -l)
     
-    for i in $(seq $step_n_rows); do
-        echo $rps >> "$LOGFILE.rps"
-    done
+    # for i in $(seq $step_n_rows); do
+    #     echo $rps >> "$LOGFILE.rps"
+    # done
 
     docker rm -f dc-client &> /dev/null
 }
@@ -114,12 +113,22 @@ printf "\n======================================================================
 printf "Benchmarking memcached with $RPS attempted RPS, for $(expr $RUNTIME / 60) minutes, reporting every $STATS_INTERVAL seconds"
 printf "\n============================================================================================\n\n"
 
-# alias run_server='docker run --cpuset-cpus=0,2,4,6,8,10,12,14,16,18,20,22,24,26,28,30,32,34 --cpuset-mems=0'
-# alias run_client='docker run --cpuset-cpus=1,3,5,7,9,11,13,15,17,19,21,23,25,27,29,31,33,35 --cpuset-mems=1'
+# TODO: use functions
+# run_server() {
+#     docker run \
+#         --cpuset-cpus=0,2,4,6,8,10,12,14,16,18,20,22,24,26,28,30,32,34 \
+#         --cpuset-mems=0 $@
+# }
+# run_client() {
+#     docker run \
+#         --cpuset-cpus=1,3,5,7,9,11,13,15,17,19,21,23,25,27,29,31,33,35 \
+#         --cpuset-mems=1 \
+#        $@ \
+# }
 
 docker rm -f dc-server dc-client dc-warmup stress &> /dev/null
 
-# Start server
+# SERVER
 export SERVER_ID=$(docker run -d \
     --net dc \
     --name dc-server \
@@ -129,34 +138,35 @@ export SERVER_ID=$(docker run -d \
         -t $SERVER_WORKERS -m $SERVER_MEMORY -n $SERVER_MIN)
 echo "Running dc-server: $SERVER_ID"
 
-# Warm up server
+# WARMUP
 echo -n "Running dc-warmup: "
 docker run -d --rm \
     --net dc \
     --name dc-warmup \
     --cpuset-cpus=1,3,5,7,9,11,13,15,17,19,21,23,25,27,29,31,33,35 \
     --cpuset-mems=1 \
-    -v $BASEDIR/src/entrypoints/warmup.sh:/entrypoint.sh \
-    --env-file "$CONFIG" -e CONNECTIONS \
-    jonassa/data-caching:client
+    -v $BASEDIR/dc-client/entrypoints/:/usr/local/bin \
+    --env-file "$CONFIG" \
+    jonassa/benchmarks:dc-client warmup.sh
 
 echo "Warming up the server ..."
 docker container wait dc-warmup
 
-# Start eris
+# ERIS
 if [ "$USE_ERIS" = 1 ]; then
     source /opt/platform-resource-manager/.direnv/python-3.6.8/bin/activate
     cd /opt/platform-resource-manager/eris
 
     export TZ='UTC'
+        # python3 eris.py -v --collect-metrics --record --detect --control -t "models/${ERIS_MODEL}.json" workload.json &> "$ERIS_LOG.log" &
     numactl --cpunodebind=0 --membind=0 \
-        python3 eris.py -v --collect-metrics --record --detect --control -t "models/${ERIS_MODEL}.json" workload.json &> "$ERIS_LOG.log" &
+        python3 eris.py -v --collect-metrics --record --detect --control workload.json &> "$ERIS_LOG.log" &
     ERIS_ID=$!
     echo "Running eris: $ERIS_ID"
     cd -
 fi
 
-# Run stress-ng
+# STRESS-NG
 if [ "$USE_STRESS" = 1 ]; then
     export STRESS_ID=$(docker run -d \
         --name stress \
@@ -168,38 +178,36 @@ if [ "$USE_STRESS" = 1 ]; then
     echo -n "Running stress-ng: $STRESS_ID"
 fi
 
-# --vm 9 \
-# --vm-bytes 4g \
-# --cpu 18 \
-# --cpu-load 50 \
-
 # Run benchmark
 if [ "$DYNAMIC_LOAD" = 1 ]; then
     init_logs
 
-    N_STEPS=5
-    export STEP_TIME=$(($RUNTIME / $N_STEPS))
-    export STEP_INTERVAL=$(($STATS_INTERVAL / $N_STEPS))
+    # N_STEPS=5
+    # export STEP_TIME=$(($RUNTIME / $N_STEPS))
+    # export STEP_INTERVAL=$(($STATS_INTERVAL / $N_STEPS))
 
-    # TODO: make dynamic profile configurable
+    # RPS_LOW=250000
+    # RPS_MID=400000
+    # RPS_HIGH=450000
+    # RPS_VERY_HIGH=500000
 
-    RPS_LOW=250000
-    RPS_MID=400000
-    RPS_HIGH=450000
-    RPS_VERY_HIGH=500000
+    # RPS_STEPS="$RPS_MID $RPS_HIGH $RPS_LOW $RPS_VERY_HIGH $RPS_MID"
 
-    RPS_STEPS="$RPS_MID $RPS_HIGH $RPS_LOW $RPS_VERY_HIGH $RPS_MID"
-
-    $BASEDIR/src/stats "$STATSFILE" & STATS_ID=$!
+    src/stats "$STATSFILE" & STATS_ID=$!
     echo "Stats collection started at $(date +%T): $STATS_ID"
 
+    run_dynamic_step
+    echo "Benchmarking the server ..."
+    docker container wait dc-client
+    process_client_logs
+
     # Dynamic steps
-    for rps in $RPS_STEPS; do
-        run_dynamic_step "$rps"
-        echo "Benchmarking the server ..."
-        docker container wait dc-client
-        process_client_logs "$rps"
-    done
+    # for rps in $RPS_STEPS; do
+    #     run_dynamic_step "$rps"
+    #     echo "Benchmarking the server ..."
+    #     docker container wait dc-client
+    #     process_client_logs "$rps"
+    # done
 else
     echo "Only dynamic loads are supported atm"
     exit
@@ -208,9 +216,9 @@ else
     #     --name dc-client \
     #     --cpuset-cpus=1,3,5,7,9,11,13,15,17,19,21,23,25,27,29,31,33,35 \
     #     --cpuset-mems=1 \
-    #     -v $BASEDIR/src/entrypoints/entrypoint.sh:/entrypoint.sh \
-    #     --env-file "$CONFIG" -e CONNECTIONS \
-    #     jonassa/data-caching:client $RPS &> /dev/null
+    #     -v dc-client/entrypoints:/usr/local/bin \
+    #     --env-file "$CONFIG" \
+    #     jonassa/benchmarks:dc-client entrypoint.sh $RPS
 
 fi
 

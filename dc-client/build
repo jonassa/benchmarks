@@ -1,0 +1,5 @@
+#!/bin/bash
+
+# tar -czvf memcached_dyn.tar.gz memcached_dyn
+docker build -t jonassa/benchmarks:dc-client .
+docker image prune -f

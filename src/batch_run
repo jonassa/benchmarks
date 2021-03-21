@@ -1,11 +1,11 @@
 #!/bin/bash
 
 export BASEDIR=$(dirname -- "$(dirname -- "$(readlink -f -- "$BASH_SOURCE")")")
-#cd $BASEDIR
+cd $BASEDIR
 
 if [ $# -eq 2 ] && [[ $1 = '-f' ]]; then
     TAG=$2
-    rm -rf "$BASEDIR/output/${TAG}"
+    rm -rf "output/${TAG}"
 elif [ $# -eq 1 ]; then
     TAG=$1
 else
@@ -13,8 +13,8 @@ else
 fi
 
 export TAG
-export CONFIG="$BASEDIR/conf/${TAG}.env"
-export OUTDIR="$BASEDIR/output/${TAG}"
+export CONFIG="conf/${TAG}.env"
+export OUTDIR="output/${TAG}"
 
 _clean_all() {
     for child in $(jobs -p); do
@@ -31,7 +31,7 @@ if [ -d "$OUTDIR" ]; then
     exit
 fi
 
-[ -f "$CONFIG" ] || CONFIG="$BASEDIR/conf/default.env"
+[ -f "$CONFIG" ] || CONFIG="conf/default.env"
 echo "Using config: $CONFIG"
 
 while read line; do 
@@ -48,7 +48,8 @@ if [[ -n $STRESS_PROFILE ]]; then
 fi
 
 for rps in $(seq $RPS_START $RPS_STEP $RPS_STOP); do
-    numactl --cpunodebind=1 --membind=1 \
-        $BASEDIR/src/benchmark $TAG $rps
+    # TODO: is this causing problems?
+    # numactl --cpunodebind=1 --membind=1 \
+        src/benchmark $TAG $rps
 done
 

@@ -1,0 +1,52 @@
+#!/bin/bash
+
+load=$2
+source /workspace/memcached/definitions.sh
+
+docker run -d --rm --name dc-server --net dc cloudsuite/data-caching:server -t 18 -m 65442 -n 550
+
+case "$1" in
+    dynamic)
+        docker run -it --rm \
+            --name dc-client \
+            --net dc \
+            -v $ENTRYPOINTS_DIR:/usr/local/bin \
+            -v $LOAD_DIR/load.cfg:/load.cfg \
+            jonassa/benchmarks:dc-client \
+            dynamic.sh
+        ;;
+
+    standard)
+        docker run -it --rm \
+            --name dc-client \
+            --net dc \
+            -v /workspace/memcached/dc-client/entrypoints:/usr/local/bin \
+            jonassa/benchmarks:dc-client \
+            standard.sh
+        ;;
+
+    shell)
+        docker run -it --rm \
+            --name dc-client \
+            --net dc \
+            jonassa/benchmarks:dc-client bash
+        ;;
+
+    mount)
+        docker run -it --rm \
+            --name dc-client \
+            --net dc \
+            -v $ENTRYPOINTS_DIR:/usr/local/bin \
+            -v $LOAD_DIR/load.cfg:/load.cfg \
+            jonassa/benchmarks:dc-client bash
+        ;;
+
+    *)
+        docker run -it --rm \
+            --name dc-client \
+            --net dc \
+            jonassa/benchmarks:dc-client
+        ;;
+esac
+
+docker kill dc-server

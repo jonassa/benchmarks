@@ -3,3 +3,6 @@ jq
 prm
 numactl
 moreutils
+
+./loader -a ../twitter_dataset/twitter_dataset_unscaled -o ../twitter_dataset/twitter_dataset_30x -s docker_servers.txt -w 18 -S 30 -D 65442 -j
+

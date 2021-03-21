@@ -5,11 +5,11 @@ alias run_server='docker run --cpuset-cpus=0,2,4,6,8,10,12,14,16,18,20,22,24,26,
 alias run_client='docker run --cpuset-cpus=1,3,5,7,9,11,13,15,17,19,21,23,25,27,29,31,33,35 --cpuset-mems=1'
 
 export BASEDIR=$(dirname -- "$(dirname -- "$(readlink -f -- "$BASH_SOURCE")")")
-#cd $BASEDIR
+cd $BASEDIR
 
 export TAG="extended"
-export CONFIG="$BASEDIR/conf/${TAG}.env"
-export OUTDIR="$BASEDIR/output/${TAG}"
+export CONFIG="conf/${TAG}.env"
+export OUTDIR="output/${TAG}"
 
 cleanup() {
     docker rm -f dc-server dc-client dc-warmup stress &> /dev/null
@@ -37,7 +37,6 @@ declare -A profiles=( \
     ['cpu']='--cpu 18 --cpu-load 50' \
 )
 
-export CONNECTIONS=$(($CPW * $CLIENT_WORKERS))
 export STRESS_PARAMS="${profiles[$STRESS_PROFILE]}"
 
 # BENCHMARK (indefinitely)
@@ -56,9 +55,9 @@ echo -n "Running dc-warmup: "
 run_client -d --rm \
     --net dc \
     --name dc-warmup \
-    -v $BASEDIR/src/entrypoints/warmup.sh:/entrypoint.sh \
-    --env-file "$CONFIG" -e CONNECTIONS \
-    jonassa/data-caching:client
+    -v dc-client/entrypoints/warmup.sh:/entrypoint.sh \
+    --env-file "$CONFIG" \
+    jonassa/benchmarks:dc-client
 
 echo "Warming up the server ..."
 docker container wait dc-warmup
@@ -80,9 +79,9 @@ echo -n "Running dc-client at $(date +%T): "
 run_client -d \
     --net dc \
     --name dc-client \
-    -v $BASEDIR/src/entrypoints/extended.sh:/entrypoint.sh \
-    --env-file "$CONFIG" -e CONNECTIONS \
-    jonassa/data-caching:client $RPS
+    -v dc-client/entrypoints/extended.sh:/entrypoint.sh \
+    --env-file "$CONFIG" \
+    jonassa/benchmarks:dc-client $RPS
 
 echo "Benchmarking the server ..."
 docker container wait dc-client
