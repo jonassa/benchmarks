@@ -1,6 +1,7 @@
 #!/bin/bash
 
-load=$2
+# either load for dyn or rps for static
+arg=$2
 source /workspace/memcached/definitions.sh
 
 docker run -d --rm --name dc-server --net dc cloudsuite/data-caching:server -t 18 -m 65442 -n 550
@@ -22,7 +23,7 @@ case "$1" in
             --net dc \
             -v /workspace/memcached/dc-client/entrypoints:/usr/local/bin \
             jonassa/benchmarks:dc-client \
-            standard.sh
+            standard.sh $arg
         ;;
 
     shell)

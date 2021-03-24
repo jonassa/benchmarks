@@ -2,12 +2,11 @@
 
 STATSFILE=$1
 
-:>| "$STATSFILE.time"
 :>| "$STATSFILE.tmp"
 :>| "$STATSFILE.rapl"
 
 cleanup() {
-    kill $stream_pid
+    kill $stream_pid &> /dev/null
     wait $stream_pid
     sed '$d' "$STATSFILE.tmp" | jq  -s . > "$STATSFILE.json" && rm -f "$STATSFILE.tmp"
 }
@@ -23,13 +22,13 @@ stream_pid=$!
 while true; do
     # RAPL timestamp (or any other stats we gather here in the future)
     # NOT accurate for docker stats API (use "read" in the response)
-    date -u --rfc-3339=ns >> "$STATSFILE.time"
+    timestamp=$(date -u --rfc-3339=ns)
 
     # Assuming package 0 corresponds to node 0
-    /workspace/bin/rapl -s | grep package-0 | awk '{print $3}' >> "$STATSFILE.rapl"
-    # /workspace/bin/rapl -s | grep package-1 | awk '{print $3}' >> "$STATSFILE.rapl"
+    energy=$(/workspace/bin/rapl -s | grep package-0 | awk '{print $3}')
+
+    echo "$timestamp, $energy" >> "$STATSFILE.rapl"
 
     # echo "0" > "/sys/class/powercap/intel-rapl:0/energy_uj"
-    # sleep 1
 done
 

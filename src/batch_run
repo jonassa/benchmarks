@@ -6,10 +6,14 @@ cd $BASEDIR
 if [ $# -eq 2 ] && [[ $1 = '-f' ]]; then
     TAG=$2
     rm -rf "output/${TAG}"
+elif [ $# -eq 2 ] && [[ $1 = '-nf' ]]; then
+    TAG=$2
+    rm -rf "output/${TAG}"
+    export NO_WARMUP=1
 elif [ $# -eq 1 ]; then
     TAG=$1
 else
-    echo "Usage: batch_run [-f] <tag>"; exit
+    echo "Usage: batch_run -[n][f] <tag>"; exit
 fi
 
 export TAG
@@ -26,12 +30,12 @@ _clean_all() {
 }
 trap _clean_all SIGINT
 
-if [ -d "$OUTDIR" ]; then
+if [[ -d $OUTDIR ]]; then
     echo "Run tag must be unique, exiting" >&2
     exit
 fi
 
-[ -f "$CONFIG" ] || CONFIG="conf/default.env"
+[[ -f $CONFIG ]] || CONFIG="conf/default.env"
 echo "Using config: $CONFIG"
 
 while read line; do 

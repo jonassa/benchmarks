@@ -1,8 +1,15 @@
 #!/bin/bash
 
-shopt -s expand_aliases
-alias run_server='docker run --cpuset-cpus=0,2,4,6,8,10,12,14,16,18,20,22,24,26,28,30,32,34 --cpuset-mems=0'
-alias run_client='docker run --cpuset-cpus=1,3,5,7,9,11,13,15,17,19,21,23,25,27,29,31,33,35 --cpuset-mems=1'
+run_server() {
+    docker run \
+        --cpuset-cpus=0,2,4,6,8,10,12,14,16,18,20,22,24,26,28,30,32,34 \
+        --cpuset-mems=0 $@
+}
+run_client() {
+    docker run \
+        --cpuset-cpus=1,3,5,7,9,11,13,15,17,19,21,23,25,27,29,31,33,35 \
+        --cpuset-mems=1 $@
+}
 
 export BASEDIR=$(dirname -- "$(dirname -- "$(readlink -f -- "$BASH_SOURCE")")")
 cd $BASEDIR
@@ -28,8 +35,8 @@ cleanup() {
 trap cleanup EXIT
 trap exit SIGINT
 
-while read var; do 
-    [ ! -z $var ] && eval "export $var"
+while read line; do 
+    [[ -n $line ]] && [[ ! $line =~ ^# ]] && eval "export $line"
 done < "$CONFIG"
 
 declare -A profiles=( \
@@ -55,9 +62,9 @@ echo -n "Running dc-warmup: "
 run_client -d --rm \
     --net dc \
     --name dc-warmup \
-    -v dc-client/entrypoints/warmup.sh:/entrypoint.sh \
+    -v $BASEDIR/dc-client/entrypoints/:/usr/local/bin \
     --env-file "$CONFIG" \
-    jonassa/benchmarks:dc-client
+    jonassa/benchmarks:dc-client warmup.sh
 
 echo "Warming up the server ..."
 docker container wait dc-warmup
@@ -79,9 +86,9 @@ echo -n "Running dc-client at $(date +%T): "
 run_client -d \
     --net dc \
     --name dc-client \
-    -v dc-client/entrypoints/extended.sh:/entrypoint.sh \
-    --env-file "$CONFIG" \
-    jonassa/benchmarks:dc-client $RPS
+    -v $BASEDIR/dc-client/entrypoints:/usr/local/bin \
+    --env-file $CONFIG \
+    jonassa/benchmarks:dc-client extended.sh $RPS
 
 echo "Benchmarking the server ..."
 docker container wait dc-client

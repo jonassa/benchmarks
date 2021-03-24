@@ -4,10 +4,6 @@ set -ex
 cd /usr/src/memcached/memcached_client/
 # echo "dc-server, 11211" > "servers.txt"
 
-# for i in $(seq $N_ROWS); do
-#     echo "DYNAMIC RPS: $rps"
-# done
-
 # Use mounted load.cfg
 [[ -r /load.cfg ]] && cp -f /load.cfg load.cfg
 

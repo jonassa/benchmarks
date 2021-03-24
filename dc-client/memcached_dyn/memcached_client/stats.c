@@ -122,14 +122,12 @@ void printGlobalStats(struct config* config) {
 
   time_t tmp = (time_t)currentTime.tv_sec;
 
-  char* timestamp = ctime(&tmp);
+  /* char* timestamp = ctime(&tmp); */
 
-  /* char timestamp[80]; */
-  /* struct tm ts; */
-  /* ts = *gmtime(&tmp); */
-  /* strftime(timestamp, sizeof(timestamp), "%a %Y-%m-%d %H:%M:%S %Z", &ts); */
-  /* strftime(timestamp, sizeof(timestamp), "%F %R:%S%z", &ts); */
-
+  char timestamp[80];
+  struct tm ts;
+  ts = *gmtime(&tmp);
+  strftime(timestamp, sizeof(timestamp), "%F %R:%S%z", &ts);
 
   printf("%11s, %10s,%8s,%16s, %8s,%11s,%10s,%13s,%10s,%10s,%10s,%12s,%10s,%10s,%11s,%14s\n", "timestamp", "timeDiff", "rps", "requests", "gets", "sets",  "hits", "misses", "avg_lat", "90th", "95th", "99th", "std", "min", "max", "avgGetSize");
   printf("%26s, %10f, %9.1f,  %10d, %10d, %10d, %10d, %10d, %10f, %10f, %10f, %10f, %10f, %10f, %10f, %10f\n", 

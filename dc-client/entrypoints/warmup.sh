@@ -1,16 +1,14 @@
 #!/bin/bash
-#set -ex
-set -x
-
-echo "dc-server, 11211" > "/usr/src/memcached/memcached_client/servers.txt"
+set -ex
 
 echo "Warming up the server"
 
-/usr/src/memcached/memcached_client/loader \
-    -a /usr/src/memcached/twitter_dataset/twitter_dataset_30x \
-    -s /usr/src/memcached/memcached_client/servers.txt \
-    -w $CLIENT_WORKERS -S 1 -c $CONNECTIONS -D $SERVER_MEMORY -j -T 1000 \
-    #> /dev/null 2>&1
+cd /usr/src/memcached/memcached_client/
+
+./loader \
+	-a ../twitter_dataset/twitter_dataset_30x \
+	-s servers.txt \
+    -c ${CONNECTIONS:=216} -w ${CLIENT_WORKERS:=18} -S 1 -e -D ${SERVER_MEMORY:=65442} -j -T 1000 \
 
 echo "Warmup completed"
 
