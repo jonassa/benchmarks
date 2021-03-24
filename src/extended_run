@@ -26,10 +26,6 @@ cleanup() {
     done
     echo "All children terminated"
 
-    echo "--------------------------------"
-    echo "Benchmark at $RPS rps complete"
-    echo "--------------------------------"
-
     exit
 }
 trap cleanup EXIT

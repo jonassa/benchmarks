@@ -4,14 +4,18 @@ cd /opt/platform-resource-manager
 source .direnv/python-3.6.8/bin/activate
 cd eris
 
-test -d logs || mkdir logs
-LOGDIR="logs/$(date +%m_%d_%H:%M)"
-
-if [ -d "$LOGDIR" ]; then
-    rm -rf $LOGDIR
+if [[ -n $1 ]]; then
+    MODEL="models/$1.json"
+else
+    MODEL="threshold.json"
 fi
-mkdir "$LOGDIR"
+
+# [[ -d logs ]] || mkdir logs
+
+# LOGDIR="logs/$(date +%m_%d_%H:%M)"
+# [[ -d $LOGDIR ]] && rm -rf $LOGDIR
+# mkdir $LOGDIR
 
 numactl --cpunodebind=0 --membind=0 \
-    python3 eris.py -v --collect-metrics --record --detect --control workload.json # &> "$LOGDIR/manage.log"
+    python3 eris.py -v --collect-metrics --record --detect --control -t $MODEL workload.json # &> "$LOGDIR/manage.log"
 

@@ -16,11 +16,10 @@ else
     echo "Usage: batch_run -[n][f] <tag>"; exit
 fi
 
-export TAG
-export CONFIG="conf/${TAG}.env"
-export OUTDIR="output/${TAG}"
+OUTDIR="$BASEDIR/output/${TAG}"
+export CONFIG="$BASEDIR/conf/${TAG}.env"
 
-_clean_all() {
+_cancel() {
     for child in $(jobs -p); do
         kill $child
         wait $child
@@ -28,10 +27,10 @@ _clean_all() {
     echo "All children terminated"
     exit
 }
-trap _clean_all SIGINT
+trap _cancel SIGINT
 
 if [[ -d $OUTDIR ]]; then
-    echo "Run tag must be unique, exiting" >&2
+    echo "Run tag must be unique" >&2
     exit
 fi
 
@@ -43,17 +42,28 @@ while read line; do
 done < "$CONFIG"
 
 declare -A profiles=( \
-    ["mem"]="--vm 9 --vm-bytes 4g" \
-    ["cpu"]="--cpu 18 --cpu-load 50" \
+    ['mem']='--vm 9 --vm-bytes 4g' \
+    ['cpu']='--cpu 18 --cpu-load 50' \
 )
 
 if [[ -n $STRESS_PROFILE ]]; then
     export STRESS_PARAMS="${profiles[$STRESS_PROFILE]}"
 fi
 
-for rps in $(seq $RPS_START $RPS_STEP $RPS_STOP); do
-    # TODO: is this causing problems?
-    # numactl --cpunodebind=1 --membind=1 \
-        src/benchmark $TAG $rps
+for (( i = 0; i < ITERATIONS; i++ )); do
+    echo Iteration $i/$ITERATIONS
+    if (($DYNAMIC_LOAD)); then
+        rundir="$OUTDIR/$i"
+        src/benchmark $rundir
+    else
+        # runtime=stats_interval
+        for rps in $(seq $RPS_START $RPS_STEP $RPS_STOP); do
+            rundir="$OUTDIR/$i/$rps"
+            # TODO: is this causing problems?
+            # numactl --cpunodebind=1 --membind=1 \
+                src/benchmark $rundir $rps
+        done
+    fi
+
 done
 

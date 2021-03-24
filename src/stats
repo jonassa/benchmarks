@@ -1,23 +1,28 @@
 #!/bin/bash
 
-STATSFILE=$1
+RUNDIR="$1"
 
-:>| "$STATSFILE.tmp"
-:>| "$STATSFILE.rapl"
+STATS_FILE="$RUNDIR/stats"
+RAPL_FILE="$RUNDIR/rapl.csv"
 
 cleanup() {
-    kill $stream_pid &> /dev/null
-    wait $stream_pid
-    sed '$d' "$STATSFILE.tmp" | jq  -s . > "$STATSFILE.json" && rm -f "$STATSFILE.tmp"
+    pids=$(jobs -p)
+    for pid in $pids; do
+        kill $pid &> /dev/null
+    done
+    wait $pids &> /dev/null
+
+    for tmp in $RUNDIR/stats*.tmp; do
+        sed '$d' "$tmp" | jq  -s . > "${tmp%.tmp}.json" && rm "$tmp"
+    done
 }
 trap cleanup EXIT
 
-curl -sS --unix-socket /var/run/docker.sock "http:/v1.26/containers/$SERVER_ID/stats?stream=1" > "$STATSFILE.tmp" &
-stream_pid=$!
-
-# TODO: collect stress-ng stats
-# curl -sS --unix-socket /var/run/docker.sock "http:/v1.26/containers/$STRESS_ID/stats?stream=1" > "$STATSFILE.tmp" &
-# stream_stress_pid=$!
+for container in "${@:2}"; do
+    read cname cid <<< $container
+    :>| "${STATS_FILE}_${cname}.tmp"
+    curl -sS --unix-socket /var/run/docker.sock "http:/v1.26/containers/$cid/stats?stream=1" > "${STATS_FILE}_${cname}.tmp" &
+done
 
 while true; do
     # RAPL timestamp (or any other stats we gather here in the future)
@@ -27,7 +32,7 @@ while true; do
     # Assuming package 0 corresponds to node 0
     energy=$(/workspace/bin/rapl -s | grep package-0 | awk '{print $3}')
 
-    echo "$timestamp, $energy" >> "$STATSFILE.rapl"
+    echo "$timestamp, $energy" >> "$RAPL_FILE"
 
     # echo "0" > "/sys/class/powercap/intel-rapl:0/energy_uj"
 done
