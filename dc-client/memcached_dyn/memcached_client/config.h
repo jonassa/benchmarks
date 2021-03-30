@@ -51,6 +51,7 @@ struct config {
   int arrival_distribution_type;
   int received_warmup_keys;
   int rps;
+  int dynamic_rps;
   int fixed_size;
   int zynga;
   int random_seed;

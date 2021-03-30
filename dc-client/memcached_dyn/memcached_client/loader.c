@@ -60,6 +60,7 @@ struct config* parseArgs(int argc, char** argv) {
   config->incr_frac = 0.0;
   config->arrival_distribution_type = ARRIVAL_CONSTANT;
   config->rps = -1;
+  config->dynamic_rps = 0;
   config->zynga = 0;
   config->random_seed = 1;
   config->pre_load = 0;
@@ -79,7 +80,7 @@ struct config* parseArgs(int argc, char** argv) {
   }
 
   int c;
-  while ((c = getopt (argc, argv, "a:c:d:D:ef:g:hi:jk:l:L:m:MnN:o:p:ur:s:S:t:T:w:W:xz")) != -1) {
+  while ((c = getopt (argc, argv, "a:c:d:D:ef:g:hi:jk:l:L:m:MnN:o:p:ur:s:S:t:T:w:W:xzy")) != -1) {
     switch (c) {
 
       case 'a':
@@ -208,6 +209,10 @@ struct config* parseArgs(int argc, char** argv) {
 
       case 'z':
         config->zynga = 1;     
+        break;
+
+      case 'y':
+        config->dynamic_rps = 1;     
         break;
     }
   }

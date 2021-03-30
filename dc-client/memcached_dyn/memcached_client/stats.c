@@ -13,8 +13,8 @@
  * Add this part to adjust the load
  * @Vinicius
  */
-// Max number of seconds we run (128 minutes by default)
-#define MAX_SECONDS 7680
+// Max number of steps we run
+#define MAX_STEPS 300
 /**
  * Add this part to adjust the load
  * @Vinicius
@@ -151,6 +151,14 @@ void printGlobalStats(struct config* config) {
 
 }//End printGlobalStats()
 
+void setRPS(struct config* config, int new_rps) {
+  int meanInterarrival = 1.0/(((float)new_rps)/(float)config->n_workers)*1e6;
+  if (config->arrival_distribution_type == ARRIVAL_CONSTANT) {
+    config->interarrival_dist = createConstantDistribution(meanInterarrival);
+  } else {
+    config->interarrival_dist = createExponentialDistribution(meanInterarrival);
+  }
+}
 
 //Print out statistics every second
 void statsLoop(struct config* config) {
@@ -159,58 +167,52 @@ void statsLoop(struct config* config) {
   gettimeofday(&start_time, NULL);
   pthread_mutex_unlock(&stats_lock);
 
-  /**
-   * Add this part to adjust the load
-   * @Vinicius
-   */
-  FILE* fp = NULL;
-  if ((fp = fopen("load.cfg", "r+")) == NULL) {
-    printf("There isn't any load configuration file: load.cfg\n");
-    exit(1);
-  }
-  int time;
-  int cumulative_time[MAX_SECONDS];
-  int qps_load[MAX_SECONDS];
-  int i = 0, cumulative = 0, total;
-  while (fscanf(fp, "%d,%d\n", &time, &qps_load[i]) != EOF) {
-    cumulative_time[i] = cumulative;
-    cumulative += time;
-    i++;
-  }
-  total = i;
-  fclose(fp);
-  /**
-   * Add this part to adjust the load
-   * @Vinicius
-   */
-
-  sleep(2);
-  printf("Stats:\n");
-  printf("-------------------------\n");
-  /**
-   * Add this part to adjust the load
-   * @Vinicius
-   */
-  i = cumulative = 0;
-  /**
-   * Add this part to adjust the load
-   * @Vinicius
-   */
-  while(i < total) {
-    printf("%d, %d: %d, %d\n", i, cumulative, cumulative_time[i], qps_load[i]);
-    if (cumulative == cumulative_time[i]) {
-      int meanInterarrival = 1.0/(((float)qps_load[i])/(float)config->n_workers)*1e6;
-      if (config->arrival_distribution_type == ARRIVAL_CONSTANT) {
-        config->interarrival_dist = createConstantDistribution(meanInterarrival);
-      } else {
-        config->interarrival_dist = createExponentialDistribution(meanInterarrival);
-      }
+  if (config->dynamic_rps) {
+    FILE* fp = NULL;
+    if ((fp = fopen("load.cfg", "r+")) == NULL) {
+      printf("There isn't any load configuration file: load.cfg\n");
+      exit(1);
+    }
+    int time;
+    int cumulative_time[MAX_STEPS];
+    int qps_load[MAX_STEPS];
+    int i = 0, cumulative = 0;
+    while (fscanf(fp, "%d,%d\n", &time, &qps_load[i]) != EOF) {
+      cumulative += time;
+      cumulative_time[i] = cumulative;
       i++;
     }
-    cumulative += config->stats_time;
-    printGlobalStats(config);
-    sleep(config->stats_time);
-  }//End while()
+    int total = i;
+    fclose(fp);
+
+    setRPS(config, qps_load[0]);
+
+    sleep(2);
+    printf("Stats:\n");
+    printf("-------------------------\n");
+
+    i = cumulative = 0;
+
+    while(i < total) {
+      printf("%d, %d: %d, %d\n", i, cumulative, cumulative_time[i], qps_load[i]);
+      if (cumulative == cumulative_time[i]) {
+        i++;
+        setRPS(config, qps_load[i]);
+      }
+      cumulative += config->stats_time;
+      printGlobalStats(config);
+      sleep(config->stats_time);
+    }
+  } else {
+    sleep(2);
+    printf("Stats:\n");
+    printf("-------------------------\n");
+    while(1) {
+      printf("%d, %d: %d, %d\n", 0, 0, 0, config->rps);
+      printGlobalStats(config);
+      sleep(config->stats_time);
+    }
+  }
 
 
 }//End statisticsLoop()
