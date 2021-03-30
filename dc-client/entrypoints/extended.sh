@@ -1,5 +1,4 @@
 #!/bin/bash
-# set -ex
 
 RPS=$1
 

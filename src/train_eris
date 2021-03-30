@@ -22,11 +22,13 @@ extended_run & extended_pid=$!
 echo "Collecting data ..."
 # numactl --cpunodebind=0 --membind=0 \
     # python3 eris.py --collect-metrics --record workload.json &> "$LOGDIR/collect.log"
-    python eris.py --collect-metrics --record workload.json &> logs/collect.log
+    # python eris.py --collect-metrics --record workload.json &> logs/collect.log
+    python eris.py --collect-metrics --record workload.json
 
 echo "Analyzing data ... "
 # python3 analyze.py workload.json &> "$LOGDIR/analyze.log"
-python analyze.py workload.json &> logs/analyze.log
+# python analyze.py workload.json &> logs/analyze.log
+python analyze.py workload.json 
 
 trap terminate SIGINT
 terminate() {

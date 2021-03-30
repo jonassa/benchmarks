@@ -31,7 +31,16 @@ _cleanup() {
 }
 trap _cleanup EXIT
 
-run_dynamic_step() {
+run_stats() {
+    if ((USE_STRESS)); then
+        src/stats $RUNDIR "dc-server $SERVER_ID" "stress $STRESS_ID" & STATS_ID=$!
+    else
+        src/stats $RUNDIR "dc-server $SERVER_ID" & STATS_ID=$!
+    fi
+    echo Stats collection started at $(date +%T): $STATS_ID
+}
+
+run_dynamic() {
     echo -n "Benchmarking, started at $(date +%T), dc-client: "
     docker run -d \
         --net dc \
@@ -39,9 +48,23 @@ run_dynamic_step() {
         --cpuset-cpus=1,3,5,7,9,11,13,15,17,19,21,23,25,27,29,31,33,35 \
         --cpuset-mems=1 \
         -v $BASEDIR/dc-client/entrypoints:/usr/local/bin \
-        -v $BASEDIR/load/$LOAD.cfg:/load.cfg \
+        -v $BASEDIR/loads/$LOAD.cfg:/load.cfg \
         --env-file $CONFIG \
         jonassa/benchmarks:dc-client dynamic.sh
+    echo Benchmarking the server ...
+}
+
+run_static() {
+    echo -n "Benchmarking, started at $(date +%T), dc-client: "
+    docker run -d \
+        --net dc \
+        --name dc-client \
+        --cpuset-cpus=1,3,5,7,9,11,13,15,17,19,21,23,25,27,29,31,33,35 \
+        --cpuset-mems=1 \
+        -v $BASEDIR/dc-client/entrypoints:/usr/local/bin \
+        --env-file $CONFIG \
+        jonassa/benchmarks:dc-client static.sh $RPS
+    echo Benchmarking the server ...
 }
 
 init_logs() {
@@ -57,9 +80,11 @@ process_client_logs() {
     grep -P '\d, \d+: ' "$LOGFILE.log" | sed 1d | awk '{print $4}' >> "$LOGFILE.rps"
     sed -n '/Outstanding/{n;p}' "$LOGFILE.log" | sed 1d | awk '{for(i=1; i<=NF; i++) t+=$i; print t; t=0}' >> "$LOGFILE.osr"
 
-    paste -d, $LOGFILE.rps $LOGFILE.lat $LOGFILE.osr > $LOGFILE.csv && rm $LOGFILE.rps $LOGFILE.lat $LOGFILE.osr
+    paste -d, $LOGFILE.rps $LOGFILE.lat $LOGFILE.osr > $LOGFILE.csv && \
+        rm $LOGFILE.rps $LOGFILE.lat $LOGFILE.osr
 
-    if (($USE_STRESS)); then
+    if ((USE_STRESS)); then
+        docker kill stress
         docker logs stress > "$STRESS_LOG"
     fi
 
@@ -92,7 +117,7 @@ echo Running dc-server: $SERVER_ID
 
 # WARMUP
 if  [[ -z $NO_WARMUP ]]; then
-    echo -n Running dc-warmup: 
+    echo -n "Running dc-warmup: "
     docker run -d --rm \
         --net dc \
         --name dc-warmup \
@@ -116,7 +141,7 @@ if ((USE_ERIS)); then
         python3 eris.py -v --collect-metrics --record --detect --control -t "models/$ERIS_MODEL.json" workload.json &> "$ERIS_LOG" &
         ERIS_ID=$!
     echo Running eris: $ERIS_ID
-    cd -
+    cd - &> /dev/null
 fi
 
 # STRESS-NG
@@ -125,35 +150,23 @@ if ((USE_STRESS)); then
         --name stress \
         --cpuset-cpus=0,2,4,6,8,10,12,14,16,18,20,22,24,26,28,30,32,34 \
         --cpuset-mems=0 \
-        polinux/stress-ng \
+        --security-opt seccomp=/root/perf.json \
+        jonassa/benchmarks:stress-ng \
             --metrics-brief --timeout 0 \
             $STRESS_PARAMS)
     echo Running stress-ng: $STRESS_ID
 fi
 
 # BENCHMARK
+init_logs
+run_stats
+
 if ((DYNAMIC_LOAD)); then
-    init_logs
-
-    if ((USE_STRESS)); then
-        src/stats $RUNDIR "dc-server $SERVER_ID" "stress $STRESS_ID" & STATS_ID=$!
-    else
-        src/stats $RUNDIR "dc-server $SERVER_ID" & STATS_ID=$!
-    fi
-    echo Stats collection started at $(date +%T): $STATS_ID
-
-    run_dynamic_step
-    echo Benchmarking the server ...
-    docker container wait dc-client
-    process_client_logs
-
+    run_dynamic
 else
-    echo Only dynamic loads are supported atm
-    exit
-    #     -v dc-client/entrypoints:/usr/local/bin \
-    #     --env-file "$CONFIG" \
-    #     jonassa/benchmarks:dc-client entrypoint.sh $RPS
-    # echo "Benchmarking the server ..."
-    # docker container wait dc-client
+    run_static
 fi
+
+docker container wait dc-client
+process_client_logs
 

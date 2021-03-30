@@ -52,11 +52,11 @@ fi
 
 for (( i = 0; i < ITERATIONS; i++ )); do
     echo Iteration $i/$ITERATIONS
-    if (($DYNAMIC_LOAD)); then
+    if ((DYNAMIC_LOAD)); then
         rundir="$OUTDIR/$i"
         src/benchmark $rundir
     else
-        # runtime=stats_interval
+        STATS_INTERVAL=$RUNTIME
         for rps in $(seq $RPS_START $RPS_STEP $RPS_STOP); do
             rundir="$OUTDIR/$i/$rps"
             # TODO: is this causing problems?

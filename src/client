@@ -12,18 +12,27 @@ case "$1" in
             --name dc-client \
             --net dc \
             -v $ENTRYPOINTS_DIR:/usr/local/bin \
-            -v $LOAD_DIR/load.cfg:/load.cfg \
+            -v $LOAD_DIR/${arg:-load}.cfg:/load.cfg \
             jonassa/benchmarks:dc-client \
             dynamic.sh
         ;;
 
-    standard)
+    static)
         docker run -it --rm \
             --name dc-client \
             --net dc \
-            -v /workspace/memcached/dc-client/entrypoints:/usr/local/bin \
+            -v $ENTRYPOINTS_DIR:/usr/local/bin \
             jonassa/benchmarks:dc-client \
-            standard.sh $arg
+            static.sh $arg
+        ;;
+
+    extended)
+        docker run -it --rm \
+            --name dc-client \
+            --net dc \
+            -v $ENTRYPOINTS_DIR:/usr/local/bin \
+            jonassa/benchmarks:dc-client \
+            extended.sh $arg
         ;;
 
     shell)
