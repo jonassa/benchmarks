@@ -1,3 +1,6 @@
 output/
 twitter_dataset_30x
 *.tar.gz
+conf/
+loads/
+lat_log/
