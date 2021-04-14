@@ -13,6 +13,7 @@ case "$1" in
             --net dc \
             -v $ENTRYPOINTS_DIR:/usr/local/bin \
             -v $LOAD_DIR/${arg:-load}.cfg:/load.cfg \
+            -v /workspace/memcached/lat_log:/usr/src/memcached/memcached_client/logs \
             jonassa/benchmarks:dc-client \
             dynamic.sh
         ;;
@@ -22,6 +23,7 @@ case "$1" in
             --name dc-client \
             --net dc \
             -v $ENTRYPOINTS_DIR:/usr/local/bin \
+            -v /workspace/memcached/lat_log:/usr/src/memcached/memcached_client/logs \
             jonassa/benchmarks:dc-client \
             static.sh $arg
         ;;
@@ -31,6 +33,7 @@ case "$1" in
             --name dc-client \
             --net dc \
             -v $ENTRYPOINTS_DIR:/usr/local/bin \
+            -v /workspace/memcached/lat_log:/usr/src/memcached/memcached_client/logs \
             jonassa/benchmarks:dc-client \
             extended.sh $arg
         ;;
@@ -39,6 +42,7 @@ case "$1" in
         docker run -it --rm \
             --name dc-client \
             --net dc \
+            -v /workspace/memcached/lat_log:/usr/src/memcached/memcached_client/logs \
             jonassa/benchmarks:dc-client bash
         ;;
 
@@ -48,6 +52,7 @@ case "$1" in
             --net dc \
             -v $ENTRYPOINTS_DIR:/usr/local/bin \
             -v $LOAD_DIR/load.cfg:/load.cfg \
+            -v /workspace/memcached/lat_log:/usr/src/memcached/memcached_client/logs \
             jonassa/benchmarks:dc-client bash
         ;;
 

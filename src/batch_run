@@ -59,11 +59,11 @@ for (( i = 0; i < ITERATIONS; i++ )); do
         STATS_INTERVAL=$RUNTIME
         for rps in $(seq $RPS_START $RPS_STEP $RPS_STOP); do
             rundir="$OUTDIR/$i/$rps"
+            echo "Benchmark at $rps RPS ($rps/$RPS_STOP)"
             # TODO: is this causing problems?
             # numactl --cpunodebind=1 --membind=1 \
                 src/benchmark $rundir $rps
         done
     fi
-
 done
 

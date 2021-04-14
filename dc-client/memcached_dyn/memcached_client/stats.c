@@ -8,6 +8,7 @@
 #include "loader.h"
 #include <assert.h>
 #include "worker.h"
+#include <stdio.h>
 
 /**
  * Add this part to adjust the load
@@ -134,6 +135,16 @@ void printGlobalStats(struct config* config) {
 		timestamp, timeDiff, rps, global_stats.requests, global_stats.gets, global_stats.sets, global_stats.hits, global_stats.misses,
 		1000*getAvg(&global_stats.response_time), 1000*q90, 1000*q95, 1000*q99, 1000*std, 1000*global_stats.response_time.min, 1000*global_stats.response_time.max, getAvg(&global_stats.get_size));
   
+  FILE *f;
+  f = fopen("logs/latency.txt", "w");
+
+  if (f == NULL) {
+      printf("Error opening file!\n");
+      exit(28);
+  }
+  fprintf(f, "%f", 1000*q99);
+  fclose(f);
+  
   int i;
   printf("Outstanding requests per worker:\n");
   for(i=0; i<config->n_workers; i++){
@@ -216,4 +227,3 @@ void statsLoop(struct config* config) {
 
 
 }//End statisticsLoop()
-

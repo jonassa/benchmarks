@@ -7,19 +7,24 @@ LOGFILE="$RUNDIR/loader"
 ERIS_LOG="$RUNDIR/eris.log"
 ERIS_QUOTA="$RUNDIR/quota.csv"
 STRESS_LOG="$RUNDIR/stress.log"
+STRESS_INST="$RUNDIR/inst.log"
 
 mkdir -p "$RUNDIR"
 cp "$CONFIG" "$RUNDIR/conf.env"
 
 _cleanup() {
+    echo STARTING CLEANUP at $(date +%T)
+    process_client_logs
+
     # [[ -n $STATS_ID ]] && kill -0 "$STATS_ID" && kill "$STATS_ID" &> /dev/null
     [[ -n $STATS_ID ]] && kill "$STATS_ID" &> /dev/null
-    [[ -n $ERIS_ID ]]  && kill -0 "$ERIS_ID"  && kill "$ERIS_ID" &> /dev/null
+    # [[ -n $ERIS_ID ]]  && kill -0 "$ERIS_ID"  && kill "$ERIS_ID" &> /dev/null
+    [[ -n $ERIS_ID ]] && kill "$ERIS_ID" &> /dev/null && echo KILLED ERIS at $(date +%T)
 
     wait $STATS_ID &> /dev/null
     docker rm -f dc-server dc-client stress 2> /dev/null
 
-    if (($USE_ERIS)); then
+    if ((USE_ERIS)); then
         grep "set container stress cpu quota" "$ERIS_LOG" | sed 's/ERROR.*//' | awk '$2 = $2","' | awk '{print $1,$2,$9}' > "$ERIS_QUOTA"
     fi
 
@@ -49,6 +54,7 @@ run_dynamic() {
         --cpuset-mems=1 \
         -v $BASEDIR/dc-client/entrypoints:/usr/local/bin \
         -v $BASEDIR/loads/$LOAD.cfg:/load.cfg \
+        -v $BASEDIR/lat_log:/usr/src/memcached/memcached_client/logs \
         --env-file $CONFIG \
         jonassa/benchmarks:dc-client dynamic.sh
     echo Benchmarking the server ...
@@ -62,6 +68,7 @@ run_static() {
         --cpuset-cpus=1,3,5,7,9,11,13,15,17,19,21,23,25,27,29,31,33,35 \
         --cpuset-mems=1 \
         -v $BASEDIR/dc-client/entrypoints:/usr/local/bin \
+        -v $BASEDIR/lat_log:/usr/src/memcached/memcached_client/logs \
         --env-file $CONFIG \
         jonassa/benchmarks:dc-client static.sh $RPS
     echo Benchmarking the server ...
@@ -84,8 +91,11 @@ process_client_logs() {
         rm $LOGFILE.rps $LOGFILE.lat $LOGFILE.osr
 
     if ((USE_STRESS)); then
+        # No output here for now
+        # docker logs stress > "$STRESS_LOG"
+
+        # Use kill if it does not interfere with perf
         docker kill stress
-        docker logs stress > "$STRESS_LOG"
     fi
 
     docker rm -f dc-client stress 2> /dev/null
@@ -137,10 +147,14 @@ if ((USE_ERIS)); then
     cd /opt/platform-resource-manager/eris
 
     export TZ='UTC'
-    numactl --cpunodebind=0 --membind=0 \
+    #numactl --cpunodebind=0 --membind=0 python3 eris.py -v --collect-metrics --record --detect --control -t "models/$ERIS_MODEL.json" workload.json 2>&1 | tee -a "$ERIS_LOG" &
+    #numactl --cpunodebind=0 --membind=0 python3 eris.py -v --collect-metrics --record --detect --control -t "models/$ERIS_MODEL.json" workload.json &   
+    unbuffer numactl --cpunodebind=0 --membind=0 \
         python3 eris.py -v --collect-metrics --record --detect --control -t "models/$ERIS_MODEL.json" workload.json &> "$ERIS_LOG" &
         ERIS_ID=$!
     echo Running eris: $ERIS_ID
+    # TODO: is unsetting this causing problems with eris timestamps? is it used by anyone else (docker stats, rapl date, loader?)
+    #unset TZ
     cd - &> /dev/null
 fi
 
@@ -155,6 +169,8 @@ if ((USE_STRESS)); then
             --metrics-brief --timeout 0 \
             $STRESS_PARAMS)
     echo Running stress-ng: $STRESS_ID
+    sleep 1
+    perf stat -e instructions -p $(pgrep stress-ng | tr '\n' ',') 2> $STRESS_INST &
 fi
 
 # BENCHMARK
@@ -168,5 +184,4 @@ else
 fi
 
 docker container wait dc-client
-process_client_logs
 
