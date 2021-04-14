@@ -83,6 +83,7 @@ run_client -d \
     --net dc \
     --name dc-client \
     -v $BASEDIR/dc-client/entrypoints:/usr/local/bin \
+    -v $LAT_DIR:/usr/src/memcached/memcached_client/logs \
     --env-file $CONFIG \
     jonassa/benchmarks:dc-client extended.sh $RPS
 

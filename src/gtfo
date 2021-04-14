@@ -1,0 +1,6 @@
+#!/bin/bash
+
+pids=$(pgrep eris.py; pgrep stats)
+[[ -n $pids ]] && kill -9 $pids
+
+docker kill dc-client dc-server stress dc-warmup

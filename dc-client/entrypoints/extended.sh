@@ -8,4 +8,4 @@ cd /usr/src/memcached/memcached_client/
 ./loader \
 	-a ../twitter_dataset/twitter_dataset_30x \
 	-s servers.txt \
-	-c ${CONNECTIONS:=216} -w ${CLIENT_WORKERS:=18} -e -r ${RPS:=450000} -T ${STATS_INTERVAL:=600}
+	-c ${CONNECTIONS:=450} -w ${CLIENT_WORKERS:=18} -e -r ${RPS:=450000} -T ${STATS_INTERVAL:=600}

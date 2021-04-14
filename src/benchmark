@@ -143,19 +143,48 @@ fi
 
 # ERIS
 if ((USE_ERIS)); then
+
+    cd /workspace/prm/eris
+    source /root/anaconda3/etc/profile.d/conda.sh
+    conda activate prm
+
+    export TZ='UTC'
+
+    if [[ -n $ERIS_MODEL ]]; then
+        eris_model="models/$ERIS_MODEL.json"
+    else
+        eris_model='threshold.json'
+    fi
+
+    unbuffer numactl --cpunodebind=0 --membind=0 \
+        python eris.py -v --collect-metrics --record --detect --control -t "$eris_model" workload.json &> "$ERIS_LOG" &
+        ERIS_ID=$!
+    echo Running eris: $ERIS_ID
+    #unset TZ
+    cd - &> /dev/null
+
+elif ((USE_ERIS_LAT)); then
+
     source /opt/platform-resource-manager/.direnv/python-3.6.8/bin/activate
     cd /opt/platform-resource-manager/eris
 
     export TZ='UTC'
-    #numactl --cpunodebind=0 --membind=0 python3 eris.py -v --collect-metrics --record --detect --control -t "models/$ERIS_MODEL.json" workload.json 2>&1 | tee -a "$ERIS_LOG" &
-    #numactl --cpunodebind=0 --membind=0 python3 eris.py -v --collect-metrics --record --detect --control -t "models/$ERIS_MODEL.json" workload.json &   
+
+    if [[ -n $ERIS_MODEL ]]; then
+        eris_model="models/$ERIS_MODEL.json"
+    else
+        eris_model='threshold.json'
+    fi
+
+    # numactl --cpunodebind=0 --membind=0 python3 eris.py -v --collect-metrics --record --detect --control -t "models/$ERIS_MODEL.json" workload.json 2>&1 | tee -a "$ERIS_LOG" &
+    # numactl --cpunodebind=0 --membind=0 python3 eris.py -v --collect-metrics --record --detect --control -t "models/$ERIS_MODEL.json" workload.json &   
     unbuffer numactl --cpunodebind=0 --membind=0 \
-        python3 eris.py -v --collect-metrics --record --detect --control -t "models/$ERIS_MODEL.json" workload.json &> "$ERIS_LOG" &
+        python eris.py -v --collect-metrics --record --detect --control -t "$eris_model" workload.json &> "$ERIS_LOG" &
         ERIS_ID=$!
     echo Running eris: $ERIS_ID
-    # TODO: is unsetting this causing problems with eris timestamps? is it used by anyone else (docker stats, rapl date, loader?)
     #unset TZ
     cd - &> /dev/null
+
 fi
 
 # STRESS-NG

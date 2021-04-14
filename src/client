@@ -4,60 +4,72 @@
 arg=$2
 source /workspace/memcached/definitions.sh
 
-docker run -d --rm --name dc-server --net dc cloudsuite/data-caching:server -t 18 -m 65442 -n 550
+run_server() {
+    docker run \
+        --cpuset-cpus=0,2,4,6,8,10,12,14,16,18,20,22,24,26,28,30,32,34 \
+        --cpuset-mems=0 $@
+}
+run_client() {
+    docker run \
+        --cpuset-cpus=1,3,5,7,9,11,13,15,17,19,21,23,25,27,29,31,33,35 \
+        --cpuset-mems=1 $@
+}
+
+run_server -d --rm --name dc-server --net dc \
+    cloudsuite/data-caching:server -t 18 -m 65442 -n 550
 
 case "$1" in
     dynamic)
-        docker run -it --rm \
+        run_client -it --rm \
             --name dc-client \
             --net dc \
             -v $ENTRYPOINTS_DIR:/usr/local/bin \
             -v $LOAD_DIR/${arg:-load}.cfg:/load.cfg \
-            -v /workspace/memcached/lat_log:/usr/src/memcached/memcached_client/logs \
+            -v $LAT_DIR:/usr/src/memcached/memcached_client/logs \
             jonassa/benchmarks:dc-client \
             dynamic.sh
         ;;
 
     static)
-        docker run -it --rm \
+        run_client -it --rm \
             --name dc-client \
             --net dc \
             -v $ENTRYPOINTS_DIR:/usr/local/bin \
-            -v /workspace/memcached/lat_log:/usr/src/memcached/memcached_client/logs \
+            -v $LAT_DIR:/usr/src/memcached/memcached_client/logs \
             jonassa/benchmarks:dc-client \
             static.sh $arg
         ;;
 
     extended)
-        docker run -it --rm \
+        run_client -it --rm \
             --name dc-client \
             --net dc \
             -v $ENTRYPOINTS_DIR:/usr/local/bin \
-            -v /workspace/memcached/lat_log:/usr/src/memcached/memcached_client/logs \
+            -v $LAT_DIR:/usr/src/memcached/memcached_client/logs \
             jonassa/benchmarks:dc-client \
             extended.sh $arg
         ;;
 
     shell)
-        docker run -it --rm \
+        run_client -it --rm \
             --name dc-client \
             --net dc \
-            -v /workspace/memcached/lat_log:/usr/src/memcached/memcached_client/logs \
+            -v $LAT_DIR:/usr/src/memcached/memcached_client/logs \
             jonassa/benchmarks:dc-client bash
         ;;
 
     mount)
-        docker run -it --rm \
+        run_client -it --rm \
             --name dc-client \
             --net dc \
             -v $ENTRYPOINTS_DIR:/usr/local/bin \
             -v $LOAD_DIR/load.cfg:/load.cfg \
-            -v /workspace/memcached/lat_log:/usr/src/memcached/memcached_client/logs \
+            -v $LAT_DIR:/usr/src/memcached/memcached_client/logs \
             jonassa/benchmarks:dc-client bash
         ;;
 
     *)
-        docker run -it --rm \
+        run_client -it --rm \
             --name dc-client \
             --net dc \
             jonassa/benchmarks:dc-client

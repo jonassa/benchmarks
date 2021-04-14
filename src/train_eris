@@ -4,12 +4,6 @@ cd /opt/platform-resource-manager
 source .direnv/python-3.6.8/bin/activate
 cd eris
 
-# test -d logs || mkdir logs
-# LOGDIR="logs/$(date +%m_%d_%H:%M)"
-
-# [[ -d $LOGDIR ]] && rm -rf "$LOGDIR"
-# mkdir "$LOGDIR"
-
 rm metric.csv util.csv && echo "Removed metric.csv and util.csv"
 test -f threshold.json && mv threshold.json threshold.json.old
 
@@ -21,12 +15,10 @@ extended_run & extended_pid=$!
 
 echo "Collecting data ..."
 # numactl --cpunodebind=0 --membind=0 \
-    # python3 eris.py --collect-metrics --record workload.json &> "$LOGDIR/collect.log"
     # python eris.py --collect-metrics --record workload.json &> logs/collect.log
     python eris.py --collect-metrics --record workload.json
 
 echo "Analyzing data ... "
-# python3 analyze.py workload.json &> "$LOGDIR/analyze.log"
 # python analyze.py workload.json &> logs/analyze.log
 python analyze.py workload.json 
 
