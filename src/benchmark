@@ -6,6 +6,7 @@ RPS="$2"
 LOGFILE="$RUNDIR/loader"
 ERIS_LOG="$RUNDIR/eris.log"
 ERIS_QUOTA="$RUNDIR/quota.csv"
+ERIS_CACHE="$RUNDIR/cache.csv"
 STRESS_LOG="$RUNDIR/stress.log"
 STRESS_INST="$RUNDIR/inst.log"
 
@@ -24,8 +25,9 @@ _cleanup() {
     wait $STATS_ID &> /dev/null
     docker rm -f dc-server dc-client stress 2> /dev/null
 
-    if ((USE_ERIS)); then
+    if ((USE_ERIS || USE_ERIS_LAT)); then
         grep "set container stress cpu quota" "$ERIS_LOG" | sed 's/ERROR.*//' | awk '$2 = $2","' | awk '{print $1,$2,$9}' > "$ERIS_QUOTA"
+        grep "set container stress llc occupancy" "$ERIS_LOG" | sed 's/ERROR.*//' | awk '$2 = $2","' | awk '{print $1,$2,$11}' > "$ERIS_CACHE"
     fi
 
     # [ ! -z $(jobs -p) ] && ( echo "There are dangling jobs"; kill -9 "$(jobs -p)" )
@@ -119,7 +121,7 @@ docker rm -f dc-server dc-client dc-warmup stress 2> /dev/null
 export SERVER_ID=$(docker run -d \
     --net dc \
     --name dc-server \
-    --cpuset-cpus=0,2,4,6,8,10,12,14,16,18,20,22,24,26,28,30,32,34 \
+    --cpuset-cpus=0,2,4,6,8,10,12,14,16 \
     --cpuset-mems=0 \
     cloudsuite/data-caching:server \
         -t $SERVER_WORKERS -m $SERVER_MEMORY -n $SERVER_MIN)
@@ -142,25 +144,28 @@ if  [[ -z $NO_WARMUP ]]; then
 fi
 
 # ERIS
+if [[ -n $ERIS_MODEL ]]; then
+    eris_model="models/$ERIS_MODEL.json"
+else
+    eris_model='threshold.json'
+fi
+
+if ((!USE_CAT)); then
+    eris_args='--disable-cat'
+fi
+
 if ((USE_ERIS)); then
 
+    source /workspace/prm/.direnv/python-3.6.8/bin/activate
     cd /workspace/prm/eris
-    source /root/anaconda3/etc/profile.d/conda.sh
-    conda activate prm
 
     export TZ='UTC'
 
-    if [[ -n $ERIS_MODEL ]]; then
-        eris_model="models/$ERIS_MODEL.json"
-    else
-        eris_model='threshold.json'
-    fi
-
     unbuffer numactl --cpunodebind=0 --membind=0 \
-        python eris.py -v --collect-metrics --record --detect --control -t "$eris_model" workload.json &> "$ERIS_LOG" &
+        python eris.py -v --collect-metrics --record --detect --control --enable-hold -t "$eris_model" $eris_args workload.json &> "$ERIS_LOG" &
         ERIS_ID=$!
     echo Running eris: $ERIS_ID
-    #unset TZ
+    unset TZ
     cd - &> /dev/null
 
 elif ((USE_ERIS_LAT)); then
@@ -170,19 +175,11 @@ elif ((USE_ERIS_LAT)); then
 
     export TZ='UTC'
 
-    if [[ -n $ERIS_MODEL ]]; then
-        eris_model="models/$ERIS_MODEL.json"
-    else
-        eris_model='threshold.json'
-    fi
-
-    # numactl --cpunodebind=0 --membind=0 python3 eris.py -v --collect-metrics --record --detect --control -t "models/$ERIS_MODEL.json" workload.json 2>&1 | tee -a "$ERIS_LOG" &
-    # numactl --cpunodebind=0 --membind=0 python3 eris.py -v --collect-metrics --record --detect --control -t "models/$ERIS_MODEL.json" workload.json &   
     unbuffer numactl --cpunodebind=0 --membind=0 \
-        python eris.py -v --collect-metrics --record --detect --control -t "$eris_model" workload.json &> "$ERIS_LOG" &
+        python eris.py -v --collect-metrics --record --detect --control --enable-hold -t "$eris_model" $eris_args workload.json &> "$ERIS_LOG" &
         ERIS_ID=$!
     echo Running eris: $ERIS_ID
-    #unset TZ
+    unset TZ
     cd - &> /dev/null
 
 fi
@@ -191,7 +188,7 @@ fi
 if ((USE_STRESS)); then
     export STRESS_ID=$(docker run -d \
         --name stress \
-        --cpuset-cpus=0,2,4,6,8,10,12,14,16,18,20,22,24,26,28,30,32,34 \
+        --cpuset-cpus=0,2,4,6,8,10,12,14,16 \
         --cpuset-mems=0 \
         --security-opt seccomp=/root/perf.json \
         jonassa/benchmarks:stress-ng \

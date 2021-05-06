@@ -43,7 +43,8 @@ done < "$CONFIG"
 
 declare -A profiles=( \
     ['mem']='--vm 9 --vm-bytes 4g' \
-    ['cpu']='--cpu 18 --cpu-load 50' \
+    ['cpu']='--cpu 9 --cpu-load 50' \
+    ['combined']='--cpu 9 --cpu-load 50 --vm 9 --vm-bytes 4g' \
 )
 
 if [[ -n $STRESS_PROFILE ]]; then
@@ -60,8 +61,7 @@ for (( i = 0; i < ITERATIONS; i++ )); do
         for rps in $(seq $RPS_START $RPS_STEP $RPS_STOP); do
             rundir="$OUTDIR/$i/$rps"
             echo "Benchmark at $rps RPS ($rps/$RPS_STOP)"
-            # TODO: is this causing problems?
-            # numactl --cpunodebind=1 --membind=1 \
+            numactl --cpunodebind=1 --membind=1 \
                 src/benchmark $rundir $rps
         done
     fi

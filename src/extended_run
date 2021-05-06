@@ -37,7 +37,7 @@ done < "$CONFIG"
 
 declare -A profiles=( \
     ['mem']='--vm 9 --vm-bytes 4g' \
-    ['cpu']='--cpu 18 --cpu-load 50' \
+    ['cpu']='--cpu 9 --cpu-load 50' \
 )
 
 export STRESS_PARAMS="${profiles[$STRESS_PROFILE]}"
