@@ -20,11 +20,11 @@ OUTDIR="$BASEDIR/output/${TAG}"
 export CONFIG="$BASEDIR/conf/${TAG}.env"
 
 _cancel() {
-    for child in $(jobs -p); do
-        kill $child
+    while [[ -n $(jobs -p) ]]; do
+        child=$(jobs -p | head -1)
+        kill $child
         wait $child
     done
-    echo "All children terminated"
     exit
 }
 trap _cancel SIGINT

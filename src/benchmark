@@ -1,4 +1,5 @@
 #!/bin/bash
+# set -x
 
 RUNDIR="$1"
 RPS="$2"
@@ -7,40 +8,50 @@ LOGFILE="$RUNDIR/loader"
 ERIS_LOG="$RUNDIR/eris.log"
 ERIS_QUOTA="$RUNDIR/quota.csv"
 ERIS_CACHE="$RUNDIR/cache.csv"
-STRESS_LOG="$RUNDIR/stress.log"
-STRESS_INST="$RUNDIR/inst.log"
+# STRESS_LOG="$RUNDIR/stress.log"
+INST_RETIRED="$RUNDIR/inst.log"
 
 mkdir -p "$RUNDIR"
 cp "$CONFIG" "$RUNDIR/conf.env"
 
 _cleanup() {
-    echo STARTING CLEANUP at $(date +%T)
+    # set -x
+
+    # Immediately stop executing BE (inst. retired)
+    docker kill stress spec2017 2> /dev/null
+
+    [[ -n $STATS_ID ]] && kill $STATS_ID
+    [[ -n $ERIS_ID ]] && kill $ERIS_ID
+
     process_client_logs
+    docker rm -f dc-client
 
-    # [[ -n $STATS_ID ]] && kill -0 "$STATS_ID" && kill "$STATS_ID" &> /dev/null
-    [[ -n $STATS_ID ]] && kill "$STATS_ID" &> /dev/null
-    # [[ -n $ERIS_ID ]]  && kill -0 "$ERIS_ID"  && kill "$ERIS_ID" &> /dev/null
-    [[ -n $ERIS_ID ]] && kill "$ERIS_ID" &> /dev/null && echo KILLED ERIS at $(date +%T)
+    wait $STATS_ID
+    docker rm -f dc-server stress spec2017 2> /dev/null
 
-    wait $STATS_ID &> /dev/null
-    docker rm -f dc-server dc-client stress 2> /dev/null
-
+    # POSTPROCESSING
     if ((USE_ERIS || USE_ERIS_LAT)); then
         grep "set container stress cpu quota" "$ERIS_LOG" | sed 's/ERROR.*//' | awk '$2 = $2","' | awk '{print $1,$2,$9}' > "$ERIS_QUOTA"
         grep "set container stress llc occupancy" "$ERIS_LOG" | sed 's/ERROR.*//' | awk '$2 = $2","' | awk '{print $1,$2,$11}' > "$ERIS_CACHE"
     fi
 
-    # [ ! -z $(jobs -p) ] && ( echo "There are dangling jobs"; kill -9 "$(jobs -p)" )
+    if ((USE_STRESS || USE_SPEC)); then
+        # docker wait spec2017
+        [[ -n $PERF_ID ]] && kill $PERF_ID
+        grep instructions $INST_RETIRED | awk '{print $1}' | sed 's/,//g' | sponge $INST_RETIRED
+    fi
 
-    # wc -l $LOGFILE.csv
-    # echo "Collected $(jq length $STATS_FILE) stats API responses" 
-    # wc -l $RAPL_FILE
+    [[ ! -z $(jobs -p) ]] && echo DANGLING BACKGROUND JOBS: $(jobs -p) >&2
+
+    echo CLEANUP DONE
 }
 trap _cleanup EXIT
 
 run_stats() {
     if ((USE_STRESS)); then
-        src/stats $RUNDIR "dc-server $SERVER_ID" "stress $STRESS_ID" & STATS_ID=$!
+        src/stats $RUNDIR "dc-server $SERVER_ID" "stress $BE_ID" & STATS_ID=$!
+    elif ((USE_SPEC)); then
+        src/stats $RUNDIR "dc-server $SERVER_ID" "spec2017 $BE_ID" & STATS_ID=$!
     else
         src/stats $RUNDIR "dc-server $SERVER_ID" & STATS_ID=$!
     fi
@@ -92,15 +103,12 @@ process_client_logs() {
     paste -d, $LOGFILE.rps $LOGFILE.lat $LOGFILE.osr > $LOGFILE.csv && \
         rm $LOGFILE.rps $LOGFILE.lat $LOGFILE.osr
 
-    if ((USE_STRESS)); then
-        # No output here for now
-        # docker logs stress > "$STRESS_LOG"
-
-        # Use kill if it does not interfere with perf
-        docker kill stress
-    fi
-
-    docker rm -f dc-client stress 2> /dev/null
+    # if ((USE_STRESS)); then
+    #     # No output here for now
+    #     # docker logs stress > "$STRESS_LOG"
+    # elif ((USE_SPEC)); then
+    #     docker kill spec2017
+    # fi
 }
 
 # TODO: use functions
@@ -115,7 +123,7 @@ process_client_logs() {
 #         --cpuset-mems=1 $@
 # }
 
-docker rm -f dc-server dc-client dc-warmup stress 2> /dev/null
+docker rm -f dc-server dc-client dc-warmup stress spec2017 2> /dev/null
 
 # SERVER
 export SERVER_ID=$(docker run -d \
@@ -154,15 +162,19 @@ if ((!USE_CAT)); then
     eris_args='--disable-cat'
 fi
 
+if [[ -n $ERIS_CONTROLLER ]]; then
+    controller="--controller $ERIS_CONTROLLER"
+fi
+
 if ((USE_ERIS)); then
 
-    source /workspace/prm/.direnv/python-3.6.8/bin/activate
-    cd /workspace/prm/eris
+    source /workspace/prm-stock/.direnv/python-3.6.8/bin/activate
+    cd /workspace/prm-stock/eris
 
     export TZ='UTC'
 
     unbuffer numactl --cpunodebind=0 --membind=0 \
-        python eris.py -v --collect-metrics --record --detect --control --enable-hold -t "$eris_model" $eris_args workload.json &> "$ERIS_LOG" &
+        python eris.py -v --collect-metrics --record --detect --control --enable-hold -t "$eris_model" $eris_args memcached.json &> "$ERIS_LOG" &
         ERIS_ID=$!
     echo Running eris: $ERIS_ID
     unset TZ
@@ -170,13 +182,13 @@ if ((USE_ERIS)); then
 
 elif ((USE_ERIS_LAT)); then
 
-    source /opt/platform-resource-manager/.direnv/python-3.6.8/bin/activate
-    cd /opt/platform-resource-manager/eris
+    source /workspace/prm-lat/.direnv/python-3.6.8/bin/activate
+    cd /workspace/prm-lat/eris
 
     export TZ='UTC'
 
     unbuffer numactl --cpunodebind=0 --membind=0 \
-        python eris.py -v --collect-metrics --record --detect --control --enable-hold -t "$eris_model" $eris_args workload.json &> "$ERIS_LOG" &
+        python eris.py -v --collect-metrics --record --detect --control --enable-hold -t "$eris_model" $eris_args $controller --latency-threshold ${LATENCY_THRESHOLD:-4.76} memcached.json &> "$ERIS_LOG" &
         ERIS_ID=$!
     echo Running eris: $ERIS_ID
     unset TZ
@@ -186,7 +198,7 @@ fi
 
 # STRESS-NG
 if ((USE_STRESS)); then
-    export STRESS_ID=$(docker run -d \
+    export BE_ID=$(docker run -d \
         --name stress \
         --cpuset-cpus=0,2,4,6,8,10,12,14,16 \
         --cpuset-mems=0 \
@@ -194,9 +206,26 @@ if ((USE_STRESS)); then
         jonassa/benchmarks:stress-ng \
             --metrics-brief --timeout 0 \
             $STRESS_PARAMS)
-    echo Running stress-ng: $STRESS_ID
+    echo Running stress-ng: $BE_ID
     sleep 1
-    perf stat -e instructions -p $(pgrep stress-ng | tr '\n' ',') 2> $STRESS_INST &
+    # perf should exit when pids stop, when stress-ng container is killed
+    perf stat -e instructions -p $(pgrep stress-ng | tr '\n' ',') 2> $INST_RETIRED &
+fi
+
+# SPEC2017
+if ((USE_SPEC)); then
+    BE_ID=$(docker run -d \
+        --name spec2017 \
+        --cpuset-cpus=0,2,4,6,8,10,12,14,16 \
+        --cpuset-mems=0 \
+        -v /var/tmp/monitor:/monitor \
+        jonassa/benchmarks:spec2017 \
+            -- 500.perlbench_r \
+        )
+
+    echo Running spec2017: $BE_ID
+    /workspace/spec/perf_monitor perlbench $INST_RETIRED & PERF_ID=$!
+    # /workspace/spec/perf_monitor perlbench $INST_RETIRED &>> $INST_RETIRED & PERF_ID=$!
 fi
 
 # BENCHMARK

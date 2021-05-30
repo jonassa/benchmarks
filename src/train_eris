@@ -1,6 +1,6 @@
 #!/bin/bash
 
-cd /opt/platform-resource-manager
+cd /workspace/prm-lat
 source .direnv/python-3.6.8/bin/activate
 cd eris
 

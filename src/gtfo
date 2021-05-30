@@ -1,5 +1,6 @@
 #!/bin/bash
 
+killall curl
 pids=$(pgrep eris.py; pgrep stats)
 [[ -n $pids ]] && kill -9 $pids
 
