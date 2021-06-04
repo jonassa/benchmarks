@@ -20,11 +20,9 @@ OUTDIR="$BASEDIR/output/${TAG}"
 export CONFIG="$BASEDIR/conf/${TAG}.env"
 
 _cancel() {
-    while [[ -n $(jobs -p) ]]; do
-        child=$(jobs -p | head -1)
-        kill $child
-        wait $child
-    done
+    children=$(jobs -p)
+    kill $children
+    wait $children
     exit
 }
 trap _cancel SIGINT
@@ -49,6 +47,11 @@ declare -A profiles=( \
 
 if [[ -n $STRESS_PROFILE ]]; then
     export STRESS_PARAMS="${profiles[$STRESS_PROFILE]}"
+fi
+
+if ((USE_STRESS)); then
+    echo stress-ng does not work anymore, exiting
+    exit
 fi
 
 for (( i = 0; i < ITERATIONS; i++ )); do
