@@ -8,7 +8,7 @@ LOGFILE="$RUNDIR/loader"
 ERIS_LOG="$RUNDIR/eris.log"
 ERIS_QUOTA="$RUNDIR/quota.csv"
 ERIS_CACHE="$RUNDIR/cache.csv"
-# STRESS_LOG="$RUNDIR/stress.log"
+PERF_DATA="$RUNDIR/perf.data"
 INST_RETIRED="$RUNDIR/inst.log"
 
 mkdir -p "$RUNDIR"
@@ -20,6 +20,7 @@ _cleanup() {
 
     [[ -n $STATS_ID ]] && kill $STATS_ID
     [[ -n $ERIS_ID ]] && kill $ERIS_ID
+    [[ -n $PERF_ID ]] && kill $PERF_ID
 
     process_client_logs
     docker rm -f dc-client
@@ -36,10 +37,8 @@ _cleanup() {
     fi
 
     if (( USE_STRESS || USE_SPEC )); then
-        # docker wait spec2017
-        [[ -n $PERF_ID ]] && kill $PERF_ID
+        perf report -q -s period -i $PERF_DATA | head -1 | awk '{print $2}' > $INST_RETIRED
         [[ ! -s $INST_RETIRED ]] && echo INST.LOG IS EMPTY!
-        grep instructions $INST_RETIRED | awk '{print $1}' | sed 's/,//g' | sponge $INST_RETIRED
     fi
 
     [[ ! -z $(jobs -p) ]] && echo DANGLING BACKGROUND JOBS: $(jobs -p) >&2
@@ -50,9 +49,9 @@ _cleanup() {
 trap _cleanup EXIT
 
 run_stats() {
-    if ((USE_STRESS)); then
+    if (( USE_STRESS )); then
         src/stats $RUNDIR "dc-server $SERVER_ID" "stress $BE_ID" & STATS_ID=$!
-    elif ((USE_SPEC)); then
+    elif (( USE_SPEC )); then
         src/stats $RUNDIR "dc-server $SERVER_ID" "spec2017 $BE_ID" & STATS_ID=$!
     else
         src/stats $RUNDIR "dc-server $SERVER_ID" & STATS_ID=$!
@@ -104,26 +103,7 @@ process_client_logs() {
 
     paste -d, $LOGFILE.rps $LOGFILE.lat $LOGFILE.osr > $LOGFILE.csv && \
         rm $LOGFILE.rps $LOGFILE.lat $LOGFILE.osr
-
-    # if ((USE_STRESS)); then
-    #     # No output here for now
-    #     # docker logs stress > "$STRESS_LOG"
-    # elif ((USE_SPEC)); then
-    #     docker kill spec2017
-    # fi
 }
-
-# TODO: use functions
-# run_server() {
-#     docker run \
-#         --cpuset-cpus=0,2,4,6,8,10,12,14,16,18,20,22,24,26,28,30,32,34 \
-#         --cpuset-mems=0 $@
-# }
-# run_client() {
-#     docker run \
-#         --cpuset-cpus=1,3,5,7,9,11,13,15,17,19,21,23,25,27,29,31,33,35 \
-#         --cpuset-mems=1 $@
-# }
 
 docker rm -f dc-server dc-client dc-warmup stress spec2017 2> /dev/null
 
@@ -160,7 +140,7 @@ else
     eris_model='threshold.json'
 fi
 
-if ((!USE_CAT)); then
+if (( ! USE_CAT )); then
     eris_args='--disable-cat'
 fi
 
@@ -168,7 +148,7 @@ if [[ -n $ERIS_CONTROLLER ]]; then
     controller="--controller $ERIS_CONTROLLER"
 fi
 
-if ((USE_ERIS)); then
+if (( USE_ERIS )); then
 
     source /workspace/prm-stock/.direnv/python-3.6.8/bin/activate
     cd /workspace/prm-stock/eris
@@ -182,7 +162,7 @@ if ((USE_ERIS)); then
     unset TZ
     cd - &> /dev/null
 
-elif ((USE_ERIS_LAT)); then
+elif (( USE_ERIS_LAT )); then
 
     source /workspace/prm-lat/.direnv/python-3.6.8/bin/activate
     cd /workspace/prm-lat/eris
@@ -199,7 +179,7 @@ elif ((USE_ERIS_LAT)); then
 fi
 
 # STRESS-NG
-if ((USE_STRESS)); then
+if (( USE_STRESS )); then
     be_name='stress'
     export BE_ID=$(docker run -d \
         --name stress \
@@ -211,12 +191,10 @@ if ((USE_STRESS)); then
             $STRESS_PARAMS)
     echo Running stress-ng: $BE_ID
     sleep 1
-    # perf should exit when pids stop, when stress-ng container is killed
-    perf stat -e instructions -p $(pgrep stress-ng | tr '\n' ',') 2> $INST_RETIRED &
 fi
 
 # SPEC2017
-if ((USE_SPEC)); then
+if (( USE_SPEC )); then
     be_name='spec2017'
     BE_ID=$(docker run -d \
         --name spec2017 \
@@ -226,25 +204,18 @@ if ((USE_SPEC)); then
         jonassa/benchmarks:spec2017 \
             -- ${SPEC_BENCHMARK:=500.perlbench_r} \
         )
+    echo Running spec2017 with $SPEC_BENCHMARK: $BE_ID
+fi
 
-    echo Running spec2017: $BE_ID
-
-    # PERF
-    if [[ $SPEC_BENCHMARK =~ fotonik3d ]]; then
-        bmark='fotonik3d_r'
-    elif [[ $SPEC_BENCHMARK =~ perlbench ]]; then
-        bmark='perlbench'
-    elif [[ $SPEC_BENCHMARK =~ namd ]]; then
-        bmark='namd'
-    fi
-    /workspace/spec/perf_monitor ${bmark:-perlbench} $INST_RETIRED & PERF_ID=$!
+if [[ -n $BE_ID ]]; then
+    perf record -e instructions -G docker/$BE_ID -o $PERF_DATA & PERF_ID=$!
 fi
 
 # BENCHMARK
 init_logs
 run_stats
 
-if ((DYNAMIC_LOAD)); then
+if (( DYNAMIC_LOAD )); then
     run_dynamic
 else
     run_static
